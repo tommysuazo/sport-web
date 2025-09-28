@@ -2,10 +2,12 @@ import { createWebHistory, createRouter } from 'vue-router'
 
 import Home from '../views/Home.vue'
 import Home2 from '../views/Home2.vue'
+import Nfl from '../views/Nfl.vue'
 
 const routes = [
   { path: '/', component: Home },
-  { path: '/home2', component: Home2},
+  { path: '/home2', component: Home2 },
+  { path: '/nfl', component: Nfl },
   { path: '/:pathMatch(.*)', name: 'NotFound', component: Home },
 ]
 
