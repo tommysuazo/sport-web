@@ -82,18 +82,14 @@ const PLAYER_SECTIONS_CONFIG = [
 
 const OFFENSE_RANK_DEFS = [
   { label: 'Points', keys: ['points_total'], fallbackKey: 'points_total' },
-  { label: 'Total Yards', keys: ['total_yards'], fallbackKey: 'total_yards' },
   { label: 'Passing', keys: ['passing_yards'], fallbackKey: 'passing_yards' },
   { label: 'Rushing', keys: ['rushing_yards'], fallbackKey: 'rushing_yards' },
-  { label: 'Scoring', keys: ['points_total'], fallbackKey: 'points_total' },
 ];
 
 const DEFENSE_RANK_DEFS = [
   { label: 'Points', keys: ['points_total'], fallbackKey: 'points_total' },
-  { label: 'Total Yards', keys: ['total_yards'], fallbackKey: 'total_yards' },
   { label: 'Passing', keys: ['passing_yards'], fallbackKey: 'passing_yards' },
   { label: 'Rushing', keys: ['rushing_yards'], fallbackKey: 'rushing_yards' },
-  { label: 'Scoring', keys: ['points_total'], fallbackKey: 'points_total' },
 ];
 
 function toArray(payload) {
@@ -734,29 +730,49 @@ onUnmounted(() => {
 
               <div class="team-section">
                 <h4>Offensive Ranks</h4>
-                <ul v-if="matchup.away_team?.offenseRanks?.length" class="rank-list">
-                  <li v-for="rank in matchup.away_team.offenseRanks" :key="rank.label">
-                    <span>{{ rank.label }}</span>
-                    <span>
-                      {{ formatNumber(rank.value) }}
-                      <span v-if="rank.rank" class="rank-meta">#{{ rank.rank }}</span>
-                    </span>
-                  </li>
-                </ul>
+                <div v-if="matchup.away_team?.offenseRanks?.length" class="rank-table-wrapper">
+                  <table class="rank-table">
+                    <thead>
+                      <tr>
+                        <th v-for="rank in matchup.away_team.offenseRanks" :key="rank.label">
+                          {{ rank.label }}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td v-for="rank in matchup.away_team.offenseRanks" :key="rank.label">
+                          <span class="rank-value">{{ formatNumber(rank.value) }}</span>
+                          <span v-if="rank.rank" class="rank-meta">#{{ rank.rank }}</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
                 <p v-else class="section-placeholder">Sin datos ofensivos.</p>
               </div>
 
               <div class="team-section">
                 <h4>Enemy Defensive Ranks</h4>
-                <ul v-if="matchup.away_team?.opponentDefenseRanks?.length" class="rank-list">
-                  <li v-for="rank in matchup.away_team.opponentDefenseRanks" :key="rank.label">
-                    <span>{{ rank.label }}</span>
-                    <span>
-                      {{ formatNumber(rank.value) }}
-                      <span v-if="rank.rank" class="rank-meta">#{{ rank.rank }}</span>
-                    </span>
-                  </li>
-                </ul>
+                <div v-if="matchup.away_team?.opponentDefenseRanks?.length" class="rank-table-wrapper">
+                  <table class="rank-table">
+                    <thead>
+                      <tr>
+                        <th v-for="rank in matchup.away_team.opponentDefenseRanks" :key="rank.label">
+                          {{ rank.label }}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td v-for="rank in matchup.away_team.opponentDefenseRanks" :key="rank.label">
+                          <span class="rank-value">{{ formatNumber(rank.value) }}</span>
+                          <span v-if="rank.rank" class="rank-meta">#{{ rank.rank }}</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
                 <p v-else class="section-placeholder">Sin datos defensivos del rival.</p>
               </div>
 
@@ -833,29 +849,49 @@ onUnmounted(() => {
 
               <div class="team-section">
                 <h4>Offensive Ranks</h4>
-                <ul v-if="matchup.home_team?.offenseRanks?.length" class="rank-list">
-                  <li v-for="rank in matchup.home_team.offenseRanks" :key="rank.label">
-                    <span>{{ rank.label }}</span>
-                    <span>
-                      {{ formatNumber(rank.value) }}
-                      <span v-if="rank.rank" class="rank-meta">#{{ rank.rank }}</span>
-                    </span>
-                  </li>
-                </ul>
+                <div v-if="matchup.home_team?.offenseRanks?.length" class="rank-table-wrapper">
+                  <table class="rank-table">
+                    <thead>
+                      <tr>
+                        <th v-for="rank in matchup.home_team.offenseRanks" :key="rank.label">
+                          {{ rank.label }}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td v-for="rank in matchup.home_team.offenseRanks" :key="rank.label">
+                          <span class="rank-value">{{ formatNumber(rank.value) }}</span>
+                          <span v-if="rank.rank" class="rank-meta">#{{ rank.rank }}</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
                 <p v-else class="section-placeholder">Sin datos ofensivos.</p>
               </div>
 
               <div class="team-section">
                 <h4>Enemy Defensive Ranks</h4>
-                <ul v-if="matchup.home_team?.opponentDefenseRanks?.length" class="rank-list">
-                  <li v-for="rank in matchup.home_team.opponentDefenseRanks" :key="rank.label">
-                    <span>{{ rank.label }}</span>
-                    <span>
-                      {{ formatNumber(rank.value) }}
-                      <span v-if="rank.rank" class="rank-meta">#{{ rank.rank }}</span>
-                    </span>
-                  </li>
-                </ul>
+                <div v-if="matchup.home_team?.opponentDefenseRanks?.length" class="rank-table-wrapper">
+                  <table class="rank-table">
+                    <thead>
+                      <tr>
+                        <th v-for="rank in matchup.home_team.opponentDefenseRanks" :key="rank.label">
+                          {{ rank.label }}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td v-for="rank in matchup.home_team.opponentDefenseRanks" :key="rank.label">
+                          <span class="rank-value">{{ formatNumber(rank.value) }}</span>
+                          <span v-if="rank.rank" class="rank-meta">#{{ rank.rank }}</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
                 <p v-else class="section-placeholder">Sin datos defensivos del rival.</p>
               </div>
 
@@ -1128,30 +1164,54 @@ onUnmounted(() => {
   color: #facc15;
 }
 
-.rank-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 8px;
-}
-
-.rank-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 10px;
-  padding: 8px 10px;
-  font-size: 13px;
-}
-
 .rank-meta {
   margin-left: 6px;
   font-size: 11px;
   color: #38bdf8;
+}
+
+.rank-table-wrapper {
+  overflow-x: auto;
+}
+
+.rank-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 260px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  table-layout: fixed;
+}
+
+.rank-table thead {
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.rank-table th,
+.rank-table td {
+  padding: 10px 12px;
+  letter-spacing: 0.02em;
+  font-size: 12px;
+  color: #cbd5f5;
+  text-align: center;
+}
+
+.rank-table th {
+  text-transform: capitalize;
+  font-weight: 600;
+}
+
+.rank-table td {
+  color: #e2e8f0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 13px;
+}
+
+.rank-value {
+  font-weight: 600;
+  margin-right: 4px;
 }
 
 .player-sections {
