@@ -21,9 +21,6 @@ const modalPlayer = ref(null);
 const modalSection = ref(null);
 const modalStats = ref([]);
 
-const HOVER_DELAY_MS = 3000;
-const hoverTimers = new Map();
-
 const API_BASE_URL = 'http://localhost/api/nfl';
 const MATCHUPS_URL = `${API_BASE_URL}/markets/matchups`;
 const MARKETS_URL = `${API_BASE_URL}/markets`;
@@ -37,12 +34,10 @@ const PLAYER_SECTIONS_CONFIG = [
     label: 'Passing Players',
     columns: [
       { key: 'name', label: 'Name' },
-      { key: 'position', label: 'Position' },
-      { key: 'passing_yards', label: 'Passing Yards', statKey: 'passing_yards' },
-      { key: 'pass_completions', label: 'Pass Completions', statKey: 'pass_completions' },
-      { key: 'pass_attempts', label: 'Pass Attempts', statKey: 'pass_attempts' },
-      { key: 'rushing_yards', label: 'Rushing Yards', statKey: 'rushing_yards' },
-      { key: 'carries', label: 'Carries', statKey: 'carries' },
+      { key: 'position', label: 'POS' },
+      { key: 'passing_yards', label: 'Pass Yds', statKey: 'passing_yards' },
+      { key: 'pass_completions', label: 'Comp', statKey: 'pass_completions' },
+      { key: 'pass_attempts', label: 'Att', statKey: 'pass_attempts' },
     ],
   },
   {
@@ -50,11 +45,9 @@ const PLAYER_SECTIONS_CONFIG = [
     label: 'Rushing Players',
     columns: [
       { key: 'name', label: 'Name' },
-      { key: 'position', label: 'Position' },
-      { key: 'rushing_yards', label: 'Rushing Yards', statKey: 'rushing_yards' },
+      { key: 'position', label: 'POS' },
+      { key: 'rushing_yards', label: 'Rush Yds', statKey: 'rushing_yards' },
       { key: 'carries', label: 'Carries', statKey: 'carries' },
-      { key: 'receiving_yards', label: 'Receiving Yards', statKey: 'receiving_yards' },
-      { key: 'receptions', label: 'Receptions', statKey: 'receptions' },
     ],
   },
   {
@@ -62,10 +55,10 @@ const PLAYER_SECTIONS_CONFIG = [
     label: 'Receiving Players',
     columns: [
       { key: 'name', label: 'Name' },
-      { key: 'position', label: 'Position' },
-      { key: 'receiving_yards', label: 'Receiving Yards', statKey: 'receiving_yards' },
-      { key: 'receptions', label: 'Receptions', statKey: 'receptions' },
-      { key: 'receiving_targets', label: 'Targets', statKey: 'receiving_targets' },
+      { key: 'position', label: 'POS' },
+      { key: 'receiving_yards', label: 'Rec Yds', statKey: 'receiving_yards' },
+      { key: 'receptions', label: 'Rec', statKey: 'receptions' },
+      { key: 'receiving_targets', label: 'Tgt', statKey: 'receiving_targets' },
     ],
   },
   {
@@ -73,8 +66,8 @@ const PLAYER_SECTIONS_CONFIG = [
     label: 'Defensive Players',
     columns: [
       { key: 'name', label: 'Name' },
-      { key: 'position', label: 'Position' },
-      { key: 'tackles', label: 'Tackles', statKey: 'tackles' },
+      { key: 'position', label: 'POS' },
+      { key: 'tackles', label: 'Tkl', statKey: 'tackles' },
       { key: 'sacks', label: 'Sacks', statKey: 'sacks' },
     ],
   },
@@ -149,6 +142,17 @@ function parseNumeric(value) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function resolveStatGameLabel(stat, index) {
+  if (!stat) return `Registro ${index + 1}`;
+  const dateValue = stat.played_at ?? stat.date ?? stat.game_date ?? stat.playedAt;
+  if (dateValue) return dateValue;
+  const week = stat.week ?? stat.game_week ?? stat.gameWeek;
+  if (week !== undefined && week !== null) return `Semana ${week}`;
+  const gameId = stat.game_id ?? stat.gameId;
+  if (gameId) return `Juego #${gameId}`;
+  return `Registro ${index + 1}`;
+}
+
 function formatMarketValue(value) {
   if (value === null || value === undefined || value === '') return '-';
   const numeric = Number(value);
@@ -187,21 +191,23 @@ function buildTeamMarkets(teamId, marketEntry) {
   const { markets } = marketEntry;
   const items = [];
   const handicap = computeHandicapForTeam(teamId, marketEntry);
-  if (handicap !== null) items.push({ label: 'Handicap', value: formatMarketValue(handicap) });
+  if (handicap !== null) {
+    items.push({ label: 'Handicap', shortLabel: 'HC', value: formatMarketValue(handicap) });
+  }
   if (markets.total_points !== null && markets.total_points !== undefined) {
-    items.push({ label: 'Total Points', value: formatMarketValue(markets.total_points) });
+    items.push({ label: 'Total Points', shortLabel: 'PTS', value: formatMarketValue(markets.total_points) });
   }
   if (markets.first_half_handicap !== null && markets.first_half_handicap !== undefined) {
-    items.push({ label: 'H1 Handicap', value: formatMarketValue(markets.first_half_handicap) });
+    items.push({ label: 'H1 Handicap', shortLabel: 'H1 HC', value: formatMarketValue(markets.first_half_handicap) });
   }
   if (markets.first_half_points !== null && markets.first_half_points !== undefined) {
-    items.push({ label: 'H1 Total Points', value: formatMarketValue(markets.first_half_points) });
+    items.push({ label: 'H1 Total Points', shortLabel: 'H1 PTS', value: formatMarketValue(markets.first_half_points) });
   }
   const soloPoints = teamId === normalizeId(marketEntry.away_team_id)
     ? markets.away_team_solo_points
     : markets.home_team_solo_points;
   if (soloPoints !== null && soloPoints !== undefined) {
-    items.push({ label: 'Solo Points', value: formatMarketValue(soloPoints) });
+    items.push({ label: 'Solo Points', shortLabel: 'SOLO', value: formatMarketValue(soloPoints) });
   }
   return items;
 }
@@ -211,26 +217,28 @@ function buildMatchupMarkets(marketEntry) {
   const { markets } = marketEntry;
   const list = [];
   if (markets.handicap !== null && markets.handicap !== undefined) {
-    list.push({ label: 'Handicap', value: formatMarketValue(markets.handicap) });
+    list.push({ label: 'Handicap', shortLabel: 'HC', value: formatMarketValue(markets.handicap) });
   }
   if (markets.total_points !== null && markets.total_points !== undefined) {
-    list.push({ label: 'Total Points', value: formatMarketValue(markets.total_points) });
+    list.push({ label: 'Total Points', shortLabel: 'PTS', value: formatMarketValue(markets.total_points) });
   }
   if (markets.first_half_handicap !== null && markets.first_half_handicap !== undefined) {
-    list.push({ label: 'H1 Handicap', value: formatMarketValue(markets.first_half_handicap) });
+    list.push({ label: 'H1 Handicap', shortLabel: 'H1 HC', value: formatMarketValue(markets.first_half_handicap) });
   }
   if (markets.first_half_points !== null && markets.first_half_points !== undefined) {
-    list.push({ label: 'H1 Total Points', value: formatMarketValue(markets.first_half_points) });
+    list.push({ label: 'H1 Total Points', shortLabel: 'H1 PTS', value: formatMarketValue(markets.first_half_points) });
   }
   if (markets.away_team_solo_points !== null && markets.away_team_solo_points !== undefined) {
     list.push({
       label: `${formatTeamName(marketEntry.away_team ?? {})} Solo Points`,
+      shortLabel: 'Away SOLO',
       value: formatMarketValue(markets.away_team_solo_points),
     });
   }
   if (markets.home_team_solo_points !== null && markets.home_team_solo_points !== undefined) {
     list.push({
       label: `${formatTeamName(marketEntry.home_team ?? {})} Solo Points`,
+      shortLabel: 'Home SOLO',
       value: formatMarketValue(markets.home_team_solo_points),
     });
   }
@@ -553,21 +561,8 @@ async function loadMatchups() {
 
 onMounted(() => {
   loadMatchups();
+  window.addEventListener('keydown', handleGlobalKeydown);
 });
-
-function clearHoverTimer(playerId) {
-  if (!playerId) return;
-  const timerId = hoverTimers.get(playerId);
-  if (timerId) {
-    clearTimeout(timerId);
-    hoverTimers.delete(playerId);
-  }
-}
-
-function clearAllHoverTimers() {
-  hoverTimers.forEach((timerId) => clearTimeout(timerId));
-  hoverTimers.clear();
-}
 
 async function ensurePlayerStats(playerId) {
   if (!playerId) return null;
@@ -606,19 +601,8 @@ function applyPlayerStatsToRow(playerId, statsEntry) {
   });
 }
 
-function handlePlayerHoverStart(row, section) {
-  const playerId = normalizeId(row?.id);
-  if (!playerId) return;
-  clearHoverTimer(playerId);
-  const timeoutId = setTimeout(() => {
-    hoverTimers.delete(playerId);
-    void openPlayerModal(row, section);
-  }, HOVER_DELAY_MS);
-  hoverTimers.set(playerId, timeoutId);
-}
-
-function handlePlayerHoverEnd(playerId) {
-  clearHoverTimer(normalizeId(playerId));
+function handlePlayerClick(row, section) {
+  void openPlayerModal(row, section);
 }
 
 async function openPlayerModal(row, section) {
@@ -662,6 +646,14 @@ async function openPlayerModal(row, section) {
   }
 }
 
+function handleGlobalKeydown(event) {
+  if (event.key === 'Escape' || event.key === 'Esc') {
+    if (modalVisible.value) {
+      closeModal();
+    }
+  }
+}
+
 function closeModal() {
   modalVisible.value = false;
   modalLoading.value = false;
@@ -672,7 +664,7 @@ function closeModal() {
 }
 
 onUnmounted(() => {
-  clearAllHoverTimers();
+  window.removeEventListener('keydown', handleGlobalKeydown);
 });
 </script>
 
@@ -715,15 +707,27 @@ onUnmounted(() => {
 
               <div class="team-section">
                 <h4>Mercados</h4>
-                <div v-if="matchup.away_team?.markets?.length" class="market-list">
-                  <div
-                    v-for="market in matchup.away_team.markets"
-                    :key="`${market.label}-${market.value}`"
-                    class="market-item"
-                  >
-                    <span>{{ market.label }}</span>
-                    <span class="market-value">{{ market.value }}</span>
-                  </div>
+                <div v-if="matchup.away_team?.markets?.length" class="market-table-wrapper">
+                  <table class="market-table">
+                    <thead>
+                      <tr>
+                        <th
+                          v-for="market in matchup.away_team.markets"
+                          :key="`${market.label}-${market.value}`"
+                          :title="market.label"
+                        >
+                          {{ market.shortLabel ?? market.label }}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td v-for="market in matchup.away_team.markets" :key="`${market.label}-${market.value}`">
+                          <span class="market-value">{{ market.value }}</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
                 <p v-else class="section-placeholder">No hay mercados disponibles.</p>
               </div>
@@ -778,7 +782,7 @@ onUnmounted(() => {
 
               <div class="team-section">
                 <h4>Jugadores</h4>
-                <p class="section-helper">Mantén el cursor 3 segundos sobre un jugador para ver sus estadísticas.</p>
+                <p class="section-helper">Haz clic sobre un jugador para ver sus estadísticas.</p>
                 <div v-if="matchup.away_team?.playerSections?.length" class="player-sections">
                   <section
                     v-for="section in matchup.away_team.playerSections"
@@ -797,8 +801,7 @@ onUnmounted(() => {
                           v-for="row in section.rows"
                           :key="row.id"
                           class="player-row"
-                          @mouseenter="handlePlayerHoverStart(row, section)"
-                          @mouseleave="handlePlayerHoverEnd(row.id)"
+                          @click="handlePlayerClick(row, section)"
                         >
                           <td v-for="column in section.columns" :key="column.key">
                             <template v-if="column.key === 'name'">
@@ -809,13 +812,15 @@ onUnmounted(() => {
                             </template>
                             <template v-else>
                               <div class="stat-cell">
-                                <span class="stat-value">{{ row.metrics[column.key]?.value ?? '-' }}</span>
-                                <small
-                                  v-if="row.metrics[column.key]?.lastFive"
-                                  class="stat-meta"
-                                >
-                                  Last 5 games: {{ row.metrics[column.key].lastFive.success }}/{{ row.metrics[column.key].lastFive.total }}
-                                </small>
+                                <span class="stat-value">
+                                  {{ row.metrics[column.key]?.value ?? '-' }}
+                                  <span
+                                    v-if="row.metrics[column.key]?.lastFive"
+                                    class="stat-meta"
+                                  >
+                                    ({{ row.metrics[column.key].lastFive.success }}/{{ row.metrics[column.key].lastFive.total }})
+                                  </span>
+                                </span>
                               </div>
                             </template>
                           </td>
@@ -834,15 +839,27 @@ onUnmounted(() => {
 
               <div class="team-section">
                 <h4>Mercados</h4>
-                <div v-if="matchup.home_team?.markets?.length" class="market-list">
-                  <div
-                    v-for="market in matchup.home_team.markets"
-                    :key="`${market.label}-${market.value}`"
-                    class="market-item"
-                  >
-                    <span>{{ market.label }}</span>
-                    <span class="market-value">{{ market.value }}</span>
-                  </div>
+                <div v-if="matchup.home_team?.markets?.length" class="market-table-wrapper">
+                  <table class="market-table">
+                    <thead>
+                      <tr>
+                        <th
+                          v-for="market in matchup.home_team.markets"
+                          :key="`${market.label}-${market.value}`"
+                          :title="market.label"
+                        >
+                          {{ market.shortLabel ?? market.label }}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td v-for="market in matchup.home_team.markets" :key="`${market.label}-${market.value}`">
+                          <span class="market-value">{{ market.value }}</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
                 <p v-else class="section-placeholder">No hay mercados disponibles.</p>
               </div>
@@ -897,7 +914,7 @@ onUnmounted(() => {
 
               <div class="team-section">
                 <h4>Jugadores</h4>
-                <p class="section-helper">Mantén el cursor 3 segundos sobre un jugador para ver sus estadísticas.</p>
+                <p class="section-helper">Haz clic sobre un jugador para ver sus estadísticas.</p>
                 <div v-if="matchup.home_team?.playerSections?.length" class="player-sections">
                   <section
                     v-for="section in matchup.home_team.playerSections"
@@ -916,8 +933,7 @@ onUnmounted(() => {
                           v-for="row in section.rows"
                           :key="row.id"
                           class="player-row"
-                          @mouseenter="handlePlayerHoverStart(row, section)"
-                          @mouseleave="handlePlayerHoverEnd(row.id)"
+                          @click="handlePlayerClick(row, section)"
                         >
                           <td v-for="column in section.columns" :key="column.key">
                             <template v-if="column.key === 'name'">
@@ -928,13 +944,15 @@ onUnmounted(() => {
                             </template>
                             <template v-else>
                               <div class="stat-cell">
-                                <span class="stat-value">{{ row.metrics[column.key]?.value ?? '-' }}</span>
-                                <small
-                                  v-if="row.metrics[column.key]?.lastFive"
-                                  class="stat-meta"
-                                >
-                                  Last 5 games: {{ row.metrics[column.key].lastFive.success }}/{{ row.metrics[column.key].lastFive.total }}
-                                </small>
+                                <span class="stat-value">
+                                  {{ row.metrics[column.key]?.value ?? '-' }}
+                                  <span
+                                    v-if="row.metrics[column.key]?.lastFive"
+                                    class="stat-meta"
+                                  >
+                                    ({{ row.metrics[column.key].lastFive.success }}/{{ row.metrics[column.key].lastFive.total }})
+                                  </span>
+                                </span>
                               </div>
                             </template>
                           </td>
@@ -950,15 +968,27 @@ onUnmounted(() => {
 
           <div v-if="matchup.matchup_markets?.length" class="team-section">
             <h4>Mercados del Partido</h4>
-            <div class="market-list">
-              <div
-                v-for="market in matchup.matchup_markets"
-                :key="`${market.label}-${market.value}`"
-                class="market-item"
-              >
-                <span>{{ market.label }}</span>
-                <span class="market-value">{{ market.value }}</span>
-              </div>
+            <div class="market-table-wrapper">
+              <table class="market-table">
+                <thead>
+                  <tr>
+                    <th
+                      v-for="market in matchup.matchup_markets"
+                      :key="`${market.label}-${market.value}`"
+                      :title="market.label"
+                    >
+                      {{ market.shortLabel ?? market.label }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td v-for="market in matchup.matchup_markets" :key="`${market.label}-${market.value}`">
+                      <span class="market-value">{{ market.value }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </article>
@@ -989,32 +1019,37 @@ onUnmounted(() => {
           <div v-else class="modal-stats-wrapper">
             <h4 v-if="modalSection?.label" class="modal-section-title">{{ modalSection.label }}</h4>
             <p v-if="!modalStats.length" class="modal-status">Sin estadísticas recientes.</p>
-            <div v-else class="modal-stats-list">
-              <article
-                v-for="(stat, index) in modalStats.slice(0, 5)"
-                :key="stat.game_id ?? stat.gameId ?? stat.id ?? stat.date ?? index"
-                class="modal-stat-card"
-              >
-                <header class="modal-stat-header">
-                  <span v-if="stat.date">{{ stat.date }}</span>
-                  <span v-else-if="stat.game_id || stat.gameId">
-                    Juego #{{ stat.game_id ?? stat.gameId }}
-                  </span>
-                  <span v-else>
-                    Registro {{ index + 1 }}
-                  </span>
-                </header>
-                <ul class="modal-stat-metrics">
-                  <li
-                    v-for="column in (modalSection ? modalSection.columns : [])"
-                    v-if="column.statKey"
-                    :key="column.key"
+            <div v-else class="modal-stats-table-wrapper">
+              <table class="modal-stats-table">
+                <thead>
+                  <tr>
+                    <th>Juego</th>
+                    <th
+                      v-for="column in (modalSection ? modalSection.columns : [])"
+                      v-if="column.statKey"
+                      :key="column.key"
+                      :title="column.label"
+                    >
+                      {{ column.label }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(stat, index) in modalStats.slice(0, 5)"
+                    :key="stat.game_id ?? stat.gameId ?? stat.id ?? stat.date ?? index"
                   >
-                    <span>{{ column.label }}</span>
-                    <span>{{ formatNumber(stat?.[column.statKey]) ?? '-' }}</span>
-                  </li>
-                </ul>
-              </article>
+                    <td class="modal-stats-game">{{ resolveStatGameLabel(stat, index) }}</td>
+                    <td
+                      v-for="column in (modalSection ? modalSection.columns : [])"
+                      v-if="column.statKey"
+                      :key="`${column.key}-${index}`"
+                    >
+                      {{ formatNumber(stat?.[column.statKey]) ?? '-' }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </section>
@@ -1142,21 +1177,36 @@ onUnmounted(() => {
   color: #f8fafc;
 }
 
-.market-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.market-table-wrapper {
+  overflow-x: auto;
 }
 
-.market-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: rgba(15, 23, 42, 0.65);
+.market-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 260px;
+  background: rgba(15, 23, 42, 0.55);
   border: 1px solid rgba(56, 189, 248, 0.12);
   border-radius: 12px;
+  table-layout: fixed;
+}
+
+.market-table thead {
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.market-table th,
+.market-table td {
   padding: 10px 12px;
+  font-size: 12px;
+  color: #cbd5f5;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+.market-table td {
   font-size: 14px;
+  color: #e2e8f0;
 }
 
 .market-value {
@@ -1265,12 +1315,14 @@ onUnmounted(() => {
 
 .stat-cell {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: baseline;
 }
 
 .stat-value {
   font-weight: 600;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
 }
 
 .stat-meta {
@@ -1379,47 +1431,41 @@ onUnmounted(() => {
   color: #38bdf8;
 }
 
-.modal-stats-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.modal-stats-table-wrapper {
+  max-height: 320px;
+  overflow-x: auto;
 }
 
-.modal-stat-card {
-  padding: 16px;
-  border-radius: 12px;
+.modal-stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 480px;
   background: rgba(15, 23, 42, 0.55);
   border: 1px solid rgba(56, 189, 248, 0.12);
 }
 
-.modal-stat-header {
-  margin-bottom: 12px;
-  font-size: 13px;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+.modal-stats-table thead {
+  background: rgba(15, 23, 42, 0.65);
 }
 
-.modal-stat-metrics {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 8px;
+.modal-stats-table th,
+.modal-stats-table td {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #cbd5f5;
+  text-align: center;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
 }
 
-.modal-stat-metrics li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+.modal-stats-table td {
   font-size: 13px;
   color: #e2e8f0;
 }
 
-.modal-stat-metrics span:last-child {
+.modal-stats-game {
   font-weight: 600;
-  color: #facc15;
+  color: #38bdf8;
+  text-align: left;
 }
 
 .modal-fade-enter-active,
