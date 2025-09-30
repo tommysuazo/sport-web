@@ -1453,12 +1453,21 @@ onUnmounted(() => {
 .players-table th:first-child,
 .players-table td:first-child {
   width: 30%;
+  text-align: left;
 }
 
 .players-table th:not(:first-child),
 .players-table td:not(:first-child) {
   width: auto;
   text-align: center;
+}
+
+.players-table thead th {
+  text-align: center;
+}
+
+.players-table thead th:first-child {
+  text-align: left;
 }
 
 .players-table th {
@@ -1476,6 +1485,7 @@ onUnmounted(() => {
 .stat-cell {
   display: flex;
   align-items: baseline;
+  justify-content: center;
 }
 
 .stat-value {
