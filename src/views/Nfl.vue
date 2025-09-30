@@ -21,8 +21,7 @@ const modalPlayer = ref(null);
 const modalSection = ref(null);
 const modalStats = ref([]);
 
-const modalTargetMetricKey = ref(null);
-const modalTargetValue = ref(null);
+const modalTargetValues = ref({});
 const modalSummary = ref(null);
 const modalOpponentDefense = ref([]);
 const modalOpponentLabel = ref('');
@@ -124,9 +123,9 @@ const DEFENSE_RANK_DEFS = [
 ];
 
 const SECTION_DEFENSE_CONFIG = {
-  passing: { label: 'PASSING', keys: ['Passing'] },
-  rushing: { label: 'RUSHING', keys: ['Rushing'] },
-  receiving: { label: 'RECEIVING', keys: ['Receiving', 'Passing'] },
+  passing: { keys: ['Passing'] },
+  rushing: { keys: ['Rushing'] },
+  receiving: { keys: ['Receiving', 'Passing'] },
 };
 
 function toArray(payload) {
@@ -221,27 +220,23 @@ function resolveOpponentCode(stat) {
   return game.away_team?.code ?? game.home_team?.code ?? '-';
 }
 
-function resolveModalTrackedValue(stat) {
-  if (!modalTargetMetricKey.value) return null;
-  return parseNumeric(stat?.[modalTargetMetricKey.value]);
-}
-
-function determineModalResult(stat) {
-  const target = modalTargetValue.value;
+function determineModalResult(stat, columnKey) {
+  const targetMap = modalTargetValues.value ?? {};
+  const target = targetMap[columnKey];
   if (target === null || target === undefined) return null;
-  const actual = resolveModalTrackedValue(stat);
+  const actual = parseNumeric(stat?.[columnKey]);
   if (actual === null) return null;
   return actual >= target;
 }
 
 function modalFieldMatchesTarget(columnKey) {
-  if (!modalTargetMetricKey.value) return false;
-  return modalTargetMetricKey.value === columnKey;
+  const targetMap = modalTargetValues.value ?? {};
+  return Object.prototype.hasOwnProperty.call(targetMap, columnKey);
 }
 
 function resolveModalCellClass(stat, columnKey) {
   if (!modalFieldMatchesTarget(columnKey)) return '';
-  const result = determineModalResult(stat);
+  const result = determineModalResult(stat, columnKey);
   if (result === null) return '';
   return result ? 'stat-hit-text' : 'stat-miss-text';
 }
@@ -254,10 +249,6 @@ function filterDefenseBySection(sectionKey, defenseList) {
   return filtered.length ? filtered : defenseList;
 }
 
-function resolveDefenseLabel(sectionKey) {
-  const config = SECTION_DEFENSE_CONFIG[sectionKey];
-  return config?.label ?? '';
-}
 
 function readMetricValue(row, key) {
   const metric = row?.metrics?.[key];
@@ -719,19 +710,15 @@ async function openPlayerModal(row, section, teamContext) {
     ? { key: section.key, label: section.label, columns: section.columns }
     : null;
   modalStats.value = [];
-  modalTargetMetricKey.value = null;
-  modalTargetValue.value = null;
+  modalTargetValues.value = {};
   modalSummary.value = buildModalSummary(section, row);
   const rawDefense = Array.isArray(teamContext?.opponentDefenseRanks)
     ? teamContext.opponentDefenseRanks.map((entry) => ({ ...entry }))
     : [];
   const opponentNameRaw = teamContext?.opponent_code ?? teamContext?.opponent_display_name ?? 'Opponent';
   const opponentName = typeof opponentNameRaw === 'string' ? opponentNameRaw.toUpperCase() : 'OPPONENT';
-  const defenseLabel = resolveDefenseLabel(section?.key);
   modalOpponentDefense.value = filterDefenseBySection(section?.key, rawDefense);
-  modalOpponentLabel.value = defenseLabel
-    ? `${opponentName} ${defenseLabel} DEFENSIVE RANKS`
-    : `${opponentName} DEFENSIVE RANKS`;
+  modalOpponentLabel.value = `${opponentName} DEFENSIVE RANKS`;
 
   const baseInfo = playerInfoMapRef.value.get(row.id) ?? {};
   modalPlayer.value = {
@@ -741,16 +728,14 @@ async function openPlayerModal(row, section, teamContext) {
     teamId: row.teamId,
   };
 
-  const metricEntries = Object.values(row.metrics ?? {});
-  const primaryMetric = metricEntries.find((entry) => {
-    if (!entry || !entry.statKey) return false;
-    const numeric = parseNumeric(entry.rawValue);
-    return numeric !== null;
+  const targetValues = {};
+  Object.entries(row.metrics ?? {}).forEach(([key, metric]) => {
+    if (!metric || !metric.statKey) return;
+    const numeric = parseNumeric(metric.rawValue);
+    if (numeric === null) return;
+    targetValues[metric.statKey] = numeric;
   });
-  if (primaryMetric) {
-    modalTargetMetricKey.value = primaryMetric.statKey;
-    modalTargetValue.value = parseNumeric(primaryMetric.rawValue);
-  }
+  modalTargetValues.value = targetValues;
 
   try {
     const statsEntry = await ensurePlayerStats(row.id);
@@ -791,8 +776,7 @@ function closeModal() {
   modalPlayer.value = null;
   modalSection.value = null;
   modalStats.value = [];
-  modalTargetMetricKey.value = null;
-  modalTargetValue.value = null;
+  modalTargetValues.value = {};
   modalSummary.value = null;
   modalOpponentDefense.value = [];
   modalOpponentLabel.value = '';
@@ -1366,7 +1350,8 @@ onUnmounted(() => {
 
 .market-table td {
   font-size: 14px;
-  color: #e2e8f0;
+  color: #facc15;
+  font-weight: 600;
 }
 
 .market-value {
@@ -1420,8 +1405,9 @@ onUnmounted(() => {
 }
 
 .rank-value {
-  font-weight: 600;
+  font-weight: 700;
   margin-right: 4px;
+  font-size: 14px;
 }
 
 .player-sections {
@@ -1450,9 +1436,9 @@ onUnmounted(() => {
 .players-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 560px;
+  min-width: 0;
   background: rgba(15, 23, 42, 0.4);
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .players-table th,
@@ -1464,6 +1450,17 @@ onUnmounted(() => {
   word-break: break-word;
 }
 
+.players-table th:first-child,
+.players-table td:first-child {
+  width: 30%;
+}
+
+.players-table th:not(:first-child),
+.players-table td:not(:first-child) {
+  width: auto;
+  text-align: center;
+}
+
 .players-table th {
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1473,7 +1470,7 @@ onUnmounted(() => {
 }
 
 .players-table tbody tr:nth-child(even) {
-  background: rgba(15, 23, 42, 0.35);
+  background: rgba(15, 23, 42, 0.6);
 }
 
 .stat-cell {
@@ -1490,16 +1487,16 @@ onUnmounted(() => {
 
 .stat-meta {
   color: #94a3b8;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .stat-meta--positive {
-  color: #bbf7d0;
+  color: #16a34a;
   font-weight: 700;
 }
 
 .stat-meta--negative {
-  color: #fecaca;
+  color: #dc2626;
   font-weight: 700;
 }
 
@@ -1647,12 +1644,19 @@ onUnmounted(() => {
   text-align: center;
   color: #e2e8f0;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.55);
 }
 
 .modal-summary-table th {
   font-weight: 700;
   color: #bae6fd;
   text-transform: uppercase;
+}
+
+.modal-summary-table tbody td {
+  background: transparent;
+  color: #facc15;
+  font-weight: 600;
 }
 
 .modal-section-title {
@@ -1700,12 +1704,12 @@ onUnmounted(() => {
   color: #e2e8f0;
 }
 .stat-hit-text {
-  color: #bbf7d0;
+  color: #16a34a;
   font-weight: 700;
 }
 
 .stat-miss-text {
-  color: #fecaca;
+  color: #dc2626;
   font-weight: 700;
 }
 
