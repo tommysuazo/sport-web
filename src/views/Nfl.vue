@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import axios from 'axios';
 
 const matchups = ref([]);
@@ -21,6 +21,12 @@ const modalPlayer = ref(null);
 const modalSection = ref(null);
 const modalStats = ref([]);
 
+const modalTargetMetricKey = ref(null);
+const modalTargetValue = ref(null);
+const modalSummary = ref(null);
+const modalOpponentDefense = ref([]);
+const modalOpponentLabel = ref('');
+
 const API_BASE_URL = 'http://localhost/api/nfl';
 const MATCHUPS_URL = `${API_BASE_URL}/markets/matchups`;
 const MARKETS_URL = `${API_BASE_URL}/markets`;
@@ -34,10 +40,9 @@ const PLAYER_SECTIONS_CONFIG = [
     label: 'Passing Players',
     columns: [
       { key: 'name', label: 'Name' },
-      { key: 'position', label: 'POS' },
-      { key: 'passing_yards', label: 'Pass Yds', statKey: 'passing_yards' },
-      { key: 'pass_completions', label: 'Comp', statKey: 'pass_completions' },
-      { key: 'pass_attempts', label: 'Att', statKey: 'pass_attempts' },
+      { key: 'passing_yards', label: 'Yards', statKey: 'passing_yards' },
+      { key: 'pass_completions', label: 'Completes', statKey: 'pass_completions' },
+      { key: 'pass_attempts', label: 'Attempts', statKey: 'pass_attempts' },
     ],
   },
   {
@@ -45,8 +50,7 @@ const PLAYER_SECTIONS_CONFIG = [
     label: 'Rushing Players',
     columns: [
       { key: 'name', label: 'Name' },
-      { key: 'position', label: 'POS' },
-      { key: 'rushing_yards', label: 'Rush Yds', statKey: 'rushing_yards' },
+      { key: 'rushing_yards', label: 'Yards', statKey: 'rushing_yards' },
       { key: 'carries', label: 'Carries', statKey: 'carries' },
     ],
   },
@@ -55,10 +59,8 @@ const PLAYER_SECTIONS_CONFIG = [
     label: 'Receiving Players',
     columns: [
       { key: 'name', label: 'Name' },
-      { key: 'position', label: 'POS' },
-      { key: 'receiving_yards', label: 'Rec Yds', statKey: 'receiving_yards' },
-      { key: 'receptions', label: 'Rec', statKey: 'receptions' },
-      { key: 'receiving_targets', label: 'Tgt', statKey: 'receiving_targets' },
+      { key: 'receiving_yards', label: 'Yards', statKey: 'receiving_yards' },
+      { key: 'receptions', label: 'Receptions', statKey: 'receptions' },
     ],
   },
   {
@@ -66,12 +68,47 @@ const PLAYER_SECTIONS_CONFIG = [
     label: 'Defensive Players',
     columns: [
       { key: 'name', label: 'Name' },
-      { key: 'position', label: 'POS' },
-      { key: 'tackles', label: 'Tkl', statKey: 'tackles' },
+      { key: 'tackles', label: 'Tackles', statKey: 'tackles' },
       { key: 'sacks', label: 'Sacks', statKey: 'sacks' },
     ],
   },
 ];
+
+const MODAL_SUMMARY_DEFS = {
+  passing: {
+    columns: [
+      { label: 'YARDS', key: 'passing_yards' },
+      { label: 'COMPLETES', key: 'pass_completions' },
+      { label: 'ATTEMPTS', key: 'pass_attempts' },
+    ],
+  },
+  rushing: {
+    columns: [
+      { label: 'YARDS', key: 'rushing_yards' },
+      { label: 'CARRIES', key: 'carries' },
+    ],
+  },
+  receiving: {
+    columns: [
+      { label: 'YARDS', key: 'receiving_yards' },
+      { label: 'RECEPTIONS', key: 'receptions' },
+    ],
+  },
+  defensive: {
+    columns: [
+      { label: 'TACKLES', key: 'tackles' },
+      { label: 'SACKS', key: 'sacks' },
+    ],
+  },
+};
+
+const modalStatColumns = computed(() => {
+  const sectionKey = modalSection.value?.key;
+  if (!sectionKey) return [];
+  const definition = MODAL_SUMMARY_DEFS[sectionKey];
+  if (!definition) return [];
+  return definition.columns;
+});
 
 const OFFENSE_RANK_DEFS = [
   { label: 'Points', keys: ['points_total'], fallbackKey: 'points_total' },
@@ -83,7 +120,14 @@ const DEFENSE_RANK_DEFS = [
   { label: 'Points', keys: ['points_total'], fallbackKey: 'points_total' },
   { label: 'Passing', keys: ['passing_yards'], fallbackKey: 'passing_yards' },
   { label: 'Rushing', keys: ['rushing_yards'], fallbackKey: 'rushing_yards' },
+  { label: 'Receiving', keys: ['receiving_yards'], fallbackKey: 'receiving_yards' },
 ];
+
+const SECTION_DEFENSE_CONFIG = {
+  passing: { label: 'PASSING', keys: ['Passing'] },
+  rushing: { label: 'RUSHING', keys: ['Rushing'] },
+  receiving: { label: 'RECEIVING', keys: ['Receiving', 'Passing'] },
+};
 
 function toArray(payload) {
   if (Array.isArray(payload)) return payload;
@@ -142,15 +186,97 @@ function parseNumeric(value) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-function resolveStatGameLabel(stat, index) {
-  if (!stat) return `Registro ${index + 1}`;
-  const dateValue = stat.played_at ?? stat.date ?? stat.game_date ?? stat.playedAt;
-  if (dateValue) return dateValue;
-  const week = stat.week ?? stat.game_week ?? stat.gameWeek;
-  if (week !== undefined && week !== null) return `Semana ${week}`;
-  const gameId = stat.game_id ?? stat.gameId;
-  if (gameId) return `Juego #${gameId}`;
-  return `Registro ${index + 1}`;
+function formatShortDate(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit' });
+}
+
+function resolveStatDate(stat) {
+  const value = stat?.played_at ?? stat?.date ?? stat?.game_date ?? stat?.game?.played_at;
+  return formatShortDate(value);
+}
+
+function resolveStatWeek(stat, index) {
+  const candidates = [stat?.week, stat?.game_week, stat?.gameWeek, stat?.game?.week];
+  for (const candidate of candidates) {
+    if (candidate !== null && candidate !== undefined) return candidate;
+  }
+  return index + 1;
+}
+
+function resolveOpponentCode(stat) {
+  const game = stat?.game ?? {};
+  const teamId = normalizeId(stat?.team_id ?? stat?.teamId);
+  const homeId = normalizeId(game.home_team_id ?? game.home_team?.id);
+  const awayId = normalizeId(game.away_team_id ?? game.away_team?.id);
+
+  if (teamId && homeId && teamId === homeId) {
+    return game.away_team?.code ?? '-';
+  }
+  if (teamId && awayId && teamId === awayId) {
+    return game.home_team?.code ?? '-';
+  }
+  return game.away_team?.code ?? game.home_team?.code ?? '-';
+}
+
+function resolveModalTrackedValue(stat) {
+  if (!modalTargetMetricKey.value) return null;
+  return parseNumeric(stat?.[modalTargetMetricKey.value]);
+}
+
+function determineModalResult(stat) {
+  const target = modalTargetValue.value;
+  if (target === null || target === undefined) return null;
+  const actual = resolveModalTrackedValue(stat);
+  if (actual === null) return null;
+  return actual >= target;
+}
+
+function modalFieldMatchesTarget(columnKey) {
+  if (!modalTargetMetricKey.value) return false;
+  return modalTargetMetricKey.value === columnKey;
+}
+
+function resolveModalCellClass(stat, columnKey) {
+  if (!modalFieldMatchesTarget(columnKey)) return '';
+  const result = determineModalResult(stat);
+  if (result === null) return '';
+  return result ? 'stat-hit-text' : 'stat-miss-text';
+}
+
+function filterDefenseBySection(sectionKey, defenseList) {
+  if (!Array.isArray(defenseList)) return [];
+  const config = SECTION_DEFENSE_CONFIG[sectionKey];
+  if (!config || !config.keys?.length) return defenseList;
+  const filtered = defenseList.filter((entry) => config.keys.includes(entry.label));
+  return filtered.length ? filtered : defenseList;
+}
+
+function resolveDefenseLabel(sectionKey) {
+  const config = SECTION_DEFENSE_CONFIG[sectionKey];
+  return config?.label ?? '';
+}
+
+function readMetricValue(row, key) {
+  const metric = row?.metrics?.[key];
+  if (!metric) return '-';
+  return metric.value ?? '-';
+}
+
+function buildModalSummary(section, row) {
+  if (!section || !row) return null;
+  const definition = MODAL_SUMMARY_DEFS[section.key];
+  if (!definition) return null;
+  const columns = definition.columns.map((column) => ({
+    label: column.label,
+    value: readMetricValue(row, column.key),
+  }));
+  return {
+    title: 'MARKETS',
+    columns,
+  };
 }
 
 function formatMarketValue(value) {
@@ -212,39 +338,6 @@ function buildTeamMarkets(teamId, marketEntry) {
   return items;
 }
 
-function buildMatchupMarkets(marketEntry) {
-  if (!marketEntry?.markets) return [];
-  const { markets } = marketEntry;
-  const list = [];
-  if (markets.handicap !== null && markets.handicap !== undefined) {
-    list.push({ label: 'Handicap', shortLabel: 'HC', value: formatMarketValue(markets.handicap) });
-  }
-  if (markets.total_points !== null && markets.total_points !== undefined) {
-    list.push({ label: 'Total Points', shortLabel: 'PTS', value: formatMarketValue(markets.total_points) });
-  }
-  if (markets.first_half_handicap !== null && markets.first_half_handicap !== undefined) {
-    list.push({ label: 'H1 Handicap', shortLabel: 'H1 HC', value: formatMarketValue(markets.first_half_handicap) });
-  }
-  if (markets.first_half_points !== null && markets.first_half_points !== undefined) {
-    list.push({ label: 'H1 Total Points', shortLabel: 'H1 PTS', value: formatMarketValue(markets.first_half_points) });
-  }
-  if (markets.away_team_solo_points !== null && markets.away_team_solo_points !== undefined) {
-    list.push({
-      label: `${formatTeamName(marketEntry.away_team ?? {})} Solo Points`,
-      shortLabel: 'Away SOLO',
-      value: formatMarketValue(markets.away_team_solo_points),
-    });
-  }
-  if (markets.home_team_solo_points !== null && markets.home_team_solo_points !== undefined) {
-    list.push({
-      label: `${formatTeamName(marketEntry.home_team ?? {})} Solo Points`,
-      shortLabel: 'Home SOLO',
-      value: formatMarketValue(markets.home_team_solo_points),
-    });
-  }
-  return list;
-}
-
 function extractTeamAverages(payload) {
   if (!payload) return [];
   if (Array.isArray(payload)) {
@@ -287,7 +380,7 @@ async function fetchTeamStatsMap(teamIds) {
         result.set(teamId, { averages: {} });
         continue;
       }
-      const keys = ['points_total', 'total_yards', 'passing_yards', 'rushing_yards', 'sacks', 'tackles'];
+      const keys = ['points_total', 'total_yards', 'passing_yards', 'rushing_yards', 'receiving_yards', 'sacks', 'tackles'];
       const averages = {};
       keys.forEach((key) => {
         const numericValues = scores
@@ -336,6 +429,15 @@ function computeLastFive(statsList, key, targetValue) {
     if (statValue !== null && statValue >= threshold) success += 1;
   });
   return { success, total: recent.length };
+}
+
+function resolveLastFiveClass(lastFive) {
+  const baseClass = 'stat-meta';
+  if (!lastFive || !lastFive.total) return baseClass;
+  const half = lastFive.total / 2;
+  if (lastFive.success > half) return `${baseClass} stat-meta--positive`;
+  if (lastFive.success < half) return `${baseClass} stat-meta--negative`;
+  return baseClass;
 }
 
 function buildRankList(teamId, defs, averagesMap, teamStatsMap, branchKey) {
@@ -409,6 +511,7 @@ function buildPlayerSections(teamId, marketEntry, playerInfoMap, playerStatsMap)
           value: formatted,
           rawValue,
           lastFive: computeLastFive(statsList, column.statKey, rawValue),
+          statKey: column.statKey,
         };
       });
 
@@ -425,8 +528,9 @@ function buildPlayerSections(teamId, marketEntry, playerInfoMap, playerStatsMap)
   return sections.filter((section) => section.rows.length);
 }
 
-function buildEnrichedTeam(rawTeam, marketEntry, averagesMap, teamStatsMap, playerInfoMap, playerStatsMap, opponentId) {
+function buildEnrichedTeam(rawTeam, marketEntry, averagesMap, teamStatsMap, playerInfoMap, playerStatsMap, opponentTeam) {
   const teamId = normalizeId(rawTeam?.id ?? rawTeam?.team_id ?? rawTeam?.teamId);
+  const opponentId = normalizeId(opponentTeam?.id ?? opponentTeam?.team_id ?? opponentTeam?.teamId);
   return {
     ...rawTeam,
     id: teamId,
@@ -435,6 +539,8 @@ function buildEnrichedTeam(rawTeam, marketEntry, averagesMap, teamStatsMap, play
     offenseRanks: buildRankList(teamId, OFFENSE_RANK_DEFS, averagesMap, teamStatsMap, 'ofensive'),
     opponentDefenseRanks: buildRankList(opponentId, DEFENSE_RANK_DEFS, averagesMap, teamStatsMap, 'defensive'),
     playerSections: buildPlayerSections(teamId, marketEntry, playerInfoMap, playerStatsMap),
+    opponent_display_name: opponentTeam ? formatTeamName(opponentTeam) : null,
+    opponent_code: opponentTeam?.code ?? opponentTeam?.abbreviation ?? null,
   };
 }
 
@@ -451,7 +557,7 @@ function enrichMatchups(rawMatchups, marketsByGame, averagesMap, teamStatsMap, p
       teamStatsMap,
       playerInfoMap,
       playerStatsMap,
-      awayTeamId
+      rawMatchup.away_team ?? {}
     );
     const awayTeam = buildEnrichedTeam(
       rawMatchup.away_team ?? {},
@@ -460,7 +566,7 @@ function enrichMatchups(rawMatchups, marketsByGame, averagesMap, teamStatsMap, p
       teamStatsMap,
       playerInfoMap,
       playerStatsMap,
-      homeTeamId
+      rawMatchup.home_team ?? {}
     );
     return {
       ...rawMatchup,
@@ -468,7 +574,6 @@ function enrichMatchups(rawMatchups, marketsByGame, averagesMap, teamStatsMap, p
       scheduled_at: rawMatchup.scheduled_at ?? rawMatchup.played_at ?? rawMatchup.date,
       home_team: homeTeam,
       away_team: awayTeam,
-      matchup_markets: buildMatchupMarkets(marketEntry),
     };
   });
 }
@@ -601,11 +706,11 @@ function applyPlayerStatsToRow(playerId, statsEntry) {
   });
 }
 
-function handlePlayerClick(row, section) {
-  void openPlayerModal(row, section);
+function handlePlayerClick(row, section, teamContext) {
+  void openPlayerModal(row, section, teamContext);
 }
 
-async function openPlayerModal(row, section) {
+async function openPlayerModal(row, section, teamContext) {
   if (!row?.id) return;
   modalVisible.value = true;
   modalLoading.value = true;
@@ -614,6 +719,19 @@ async function openPlayerModal(row, section) {
     ? { key: section.key, label: section.label, columns: section.columns }
     : null;
   modalStats.value = [];
+  modalTargetMetricKey.value = null;
+  modalTargetValue.value = null;
+  modalSummary.value = buildModalSummary(section, row);
+  const rawDefense = Array.isArray(teamContext?.opponentDefenseRanks)
+    ? teamContext.opponentDefenseRanks.map((entry) => ({ ...entry }))
+    : [];
+  const opponentNameRaw = teamContext?.opponent_code ?? teamContext?.opponent_display_name ?? 'Opponent';
+  const opponentName = typeof opponentNameRaw === 'string' ? opponentNameRaw.toUpperCase() : 'OPPONENT';
+  const defenseLabel = resolveDefenseLabel(section?.key);
+  modalOpponentDefense.value = filterDefenseBySection(section?.key, rawDefense);
+  modalOpponentLabel.value = defenseLabel
+    ? `${opponentName} ${defenseLabel} DEFENSIVE RANKS`
+    : `${opponentName} DEFENSIVE RANKS`;
 
   const baseInfo = playerInfoMapRef.value.get(row.id) ?? {};
   modalPlayer.value = {
@@ -622,6 +740,17 @@ async function openPlayerModal(row, section) {
     position: row.position ?? readPlayerPosition(baseInfo),
     teamId: row.teamId,
   };
+
+  const metricEntries = Object.values(row.metrics ?? {});
+  const primaryMetric = metricEntries.find((entry) => {
+    if (!entry || !entry.statKey) return false;
+    const numeric = parseNumeric(entry.rawValue);
+    return numeric !== null;
+  });
+  if (primaryMetric) {
+    modalTargetMetricKey.value = primaryMetric.statKey;
+    modalTargetValue.value = parseNumeric(primaryMetric.rawValue);
+  }
 
   try {
     const statsEntry = await ensurePlayerStats(row.id);
@@ -638,6 +767,7 @@ async function openPlayerModal(row, section) {
       position: readPlayerPosition(updatedInfo),
       teamId: row.teamId,
     };
+    modalSummary.value = buildModalSummary(section, row);
     modalStats.value = Array.isArray(statsEntry.stats) ? statsEntry.stats : [];
   } catch (error) {
     modalError.value = 'No se pudieron cargar las estadísticas del jugador.';
@@ -661,6 +791,11 @@ function closeModal() {
   modalPlayer.value = null;
   modalSection.value = null;
   modalStats.value = [];
+  modalTargetMetricKey.value = null;
+  modalTargetValue.value = null;
+  modalSummary.value = null;
+  modalOpponentDefense.value = [];
+  modalOpponentLabel.value = '';
 }
 
 onUnmounted(() => {
@@ -801,7 +936,7 @@ onUnmounted(() => {
                           v-for="row in section.rows"
                           :key="row.id"
                           class="player-row"
-                          @click="handlePlayerClick(row, section)"
+                          @click="handlePlayerClick(row, section, matchup.away_team)"
                         >
                           <td v-for="column in section.columns" :key="column.key">
                             <template v-if="column.key === 'name'">
@@ -816,7 +951,7 @@ onUnmounted(() => {
                                   {{ row.metrics[column.key]?.value ?? '-' }}
                                   <span
                                     v-if="row.metrics[column.key]?.lastFive"
-                                    class="stat-meta"
+                                    :class="resolveLastFiveClass(row.metrics[column.key]?.lastFive)"
                                   >
                                     ({{ row.metrics[column.key].lastFive.success }}/{{ row.metrics[column.key].lastFive.total }})
                                   </span>
@@ -933,7 +1068,7 @@ onUnmounted(() => {
                           v-for="row in section.rows"
                           :key="row.id"
                           class="player-row"
-                          @click="handlePlayerClick(row, section)"
+                          @click="handlePlayerClick(row, section, matchup.home_team)"
                         >
                           <td v-for="column in section.columns" :key="column.key">
                             <template v-if="column.key === 'name'">
@@ -948,7 +1083,7 @@ onUnmounted(() => {
                                   {{ row.metrics[column.key]?.value ?? '-' }}
                                   <span
                                     v-if="row.metrics[column.key]?.lastFive"
-                                    class="stat-meta"
+                                    :class="resolveLastFiveClass(row.metrics[column.key]?.lastFive)"
                                   >
                                     ({{ row.metrics[column.key].lastFive.success }}/{{ row.metrics[column.key].lastFive.total }})
                                   </span>
@@ -965,32 +1100,6 @@ onUnmounted(() => {
               </div>
             </section>
           </div>
-
-          <div v-if="matchup.matchup_markets?.length" class="team-section">
-            <h4>Mercados del Partido</h4>
-            <div class="market-table-wrapper">
-              <table class="market-table">
-                <thead>
-                  <tr>
-                    <th
-                      v-for="market in matchup.matchup_markets"
-                      :key="`${market.label}-${market.value}`"
-                      :title="market.label"
-                    >
-                      {{ market.shortLabel ?? market.label }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td v-for="market in matchup.matchup_markets" :key="`${market.label}-${market.value}`">
-                      <span class="market-value">{{ market.value }}</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
         </article>
       </div>
     </div>
@@ -1004,7 +1113,7 @@ onUnmounted(() => {
     >
       <div class="player-modal">
         <header class="player-modal-header">
-          <div>
+          <div class="player-modal-heading">
             <h3 class="player-modal-title">{{ modalPlayer?.name ?? 'Jugador' }}</h3>
             <p v-if="modalPlayer?.position" class="player-modal-subtitle">
               Posición: {{ modalPlayer.position }}
@@ -1017,19 +1126,62 @@ onUnmounted(() => {
           <div v-if="modalLoading" class="modal-status">Cargando estadísticas...</div>
           <div v-else-if="modalError" class="modal-status modal-status-error">{{ modalError }}</div>
           <div v-else class="modal-stats-wrapper">
-            <h4 v-if="modalSection?.label" class="modal-section-title">{{ modalSection.label }}</h4>
+            <div
+              v-if="modalSummary || (modalOpponentDefense && modalOpponentDefense.length)"
+              class="modal-summary-row"
+            >
+              <section v-if="modalOpponentDefense && modalOpponentDefense.length" class="modal-summary-card">
+                <header class="modal-summary-title">{{ modalOpponentLabel }}</header>
+                <table class="modal-summary-table rank-table modal-summary-table--defense">
+                  <thead>
+                    <tr>
+                      <th v-for="entry in modalOpponentDefense" :key="entry.label">
+                        {{ entry.label?.toUpperCase?.() ?? entry.label }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td v-for="entry in modalOpponentDefense" :key="`${entry.label}-value`">
+                        <span class="rank-value">{{ formatNumber(entry.value) }}</span>
+                        <span v-if="entry.rank" class="rank-meta">#{{ entry.rank }}</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+
+              <section v-if="modalSummary" class="modal-summary-card">
+                <header class="modal-summary-title">{{ modalSummary.title }}</header>
+                <table class="modal-summary-table">
+                  <thead>
+                    <tr>
+                      <th v-for="column in modalSummary.columns" :key="column.label">
+                        {{ column.label }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td v-for="column in modalSummary.columns" :key="`${column.label}-value`">
+                        {{ column.value }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+            </div>
+
+            <h4 v-if="modalSection?.label" class="modal-section-title">{{ modalSection.label.toUpperCase() }}</h4>
             <p v-if="!modalStats.length" class="modal-status">Sin estadísticas recientes.</p>
             <div v-else class="modal-stats-table-wrapper">
               <table class="modal-stats-table">
                 <thead>
                   <tr>
-                    <th>Juego</th>
-                    <th
-                      v-for="column in (modalSection ? modalSection.columns : [])"
-                      v-if="column.statKey"
-                      :key="column.key"
-                      :title="column.label"
-                    >
+                    <th>WEEK</th>
+                    <th>DATE</th>
+                    <th>RIVAL</th>
+                    <th v-for="column in modalStatColumns" :key="column.label">
                       {{ column.label }}
                     </th>
                   </tr>
@@ -1039,13 +1191,16 @@ onUnmounted(() => {
                     v-for="(stat, index) in modalStats.slice(0, 5)"
                     :key="stat.game_id ?? stat.gameId ?? stat.id ?? stat.date ?? index"
                   >
-                    <td class="modal-stats-game">{{ resolveStatGameLabel(stat, index) }}</td>
+                    <td>{{ resolveStatWeek(stat, index) }}</td>
+                    <td>{{ resolveStatDate(stat) }}</td>
+                    <td>{{ resolveOpponentCode(stat) }}</td>
                     <td
-                      v-for="column in (modalSection ? modalSection.columns : [])"
-                      v-if="column.statKey"
+                      v-for="column in modalStatColumns"
                       :key="`${column.key}-${index}`"
                     >
-                      {{ formatNumber(stat?.[column.statKey]) ?? '-' }}
+                      <span :class="resolveModalCellClass(stat, column.key)">
+                        {{ formatNumber(stat?.[column.key]) ?? '-' }}
+                      </span>
                     </td>
                   </tr>
                 </tbody>
@@ -1204,6 +1359,11 @@ onUnmounted(() => {
   letter-spacing: 0.04em;
 }
 
+.market-table th {
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
 .market-table td {
   font-size: 14px;
   color: #e2e8f0;
@@ -1248,8 +1408,8 @@ onUnmounted(() => {
 }
 
 .rank-table th {
-  text-transform: capitalize;
-  font-weight: 600;
+  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .rank-table td {
@@ -1292,6 +1452,7 @@ onUnmounted(() => {
   border-collapse: collapse;
   min-width: 560px;
   background: rgba(15, 23, 42, 0.4);
+  table-layout: fixed;
 }
 
 .players-table th,
@@ -1300,6 +1461,7 @@ onUnmounted(() => {
   text-align: left;
   font-size: 13px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  word-break: break-word;
 }
 
 .players-table th {
@@ -1307,6 +1469,7 @@ onUnmounted(() => {
   letter-spacing: 0.06em;
   color: #cbd5f5;
   background: rgba(15, 23, 42, 0.55);
+  font-weight: 700;
 }
 
 .players-table tbody tr:nth-child(even) {
@@ -1328,6 +1491,16 @@ onUnmounted(() => {
 .stat-meta {
   color: #94a3b8;
   font-size: 11px;
+}
+
+.stat-meta--positive {
+  color: #bbf7d0;
+  font-weight: 700;
+}
+
+.stat-meta--negative {
+  color: #fecaca;
+  font-weight: 700;
 }
 
 .player-row {
@@ -1352,7 +1525,7 @@ onUnmounted(() => {
 }
 
 .player-modal {
-  width: min(600px, 100%);
+  width: min(780px, 100%);
   background: rgba(10, 14, 25, 0.95);
   border: 1px solid rgba(56, 189, 248, 0.25);
   border-radius: 16px;
@@ -1362,10 +1535,16 @@ onUnmounted(() => {
 
 .player-modal-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   padding: 20px 24px;
   border-bottom: 1px solid rgba(56, 189, 248, 0.12);
+  position: relative;
+}
+
+.player-modal-heading {
+  flex: 1;
+  text-align: center;
 }
 
 .player-modal-title {
@@ -1389,6 +1568,10 @@ onUnmounted(() => {
   line-height: 1;
   cursor: pointer;
   transition: color 0.2s ease;
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .modal-close-button:hover {
@@ -1423,12 +1606,62 @@ onUnmounted(() => {
   gap: 16px;
 }
 
+.modal-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.modal-summary-card {
+  flex: 1 1 0;
+  min-width: 320px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-x: auto;
+}
+
+.modal-summary-title {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #38bdf8;
+  font-weight: 700;
+}
+
+.modal-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.modal-summary-table th,
+.modal-summary-table td {
+  padding: 8px 10px;
+  font-size: 12px;
+  text-align: center;
+  color: #e2e8f0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.modal-summary-table th {
+  font-weight: 700;
+  color: #bae6fd;
+  text-transform: uppercase;
+}
+
 .modal-section-title {
   margin: 0;
   font-size: 14px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: #38bdf8;
+  font-weight: 700;
 }
 
 .modal-stats-table-wrapper {
@@ -1457,15 +1690,30 @@ onUnmounted(() => {
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
 }
 
+.modal-stats-table th {
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
 .modal-stats-table td {
   font-size: 13px;
   color: #e2e8f0;
 }
+.stat-hit-text {
+  color: #bbf7d0;
+  font-weight: 700;
+}
 
-.modal-stats-game {
-  font-weight: 600;
-  color: #38bdf8;
-  text-align: left;
+.stat-miss-text {
+  color: #fecaca;
+  font-weight: 700;
+}
+
+@media (max-width: 560px) {
+  .modal-summary-card {
+    flex: 1 1 100%;
+    width: 100%;
+  }
 }
 
 .modal-fade-enter-active,
