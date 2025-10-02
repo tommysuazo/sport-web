@@ -10,7 +10,7 @@
       </header>
 
       <section v-if="teamMarkets.length" class="modal-section market-section">
-        <h3>Mercados</h3>
+        <h3>MARKETS</h3>
         <div class="market-table-wrapper">
           <table class="market-table">
             <thead>
@@ -391,13 +391,13 @@ const close = () => emit('close');
 }
 
 .modal-content {
-  background: #0f172a;
+  background: #0a0e1a;
   color: #e2e8f0;
   padding: 24px;
   border-radius: 12px;
   max-height: 85vh;
   overflow-y: auto;
-  min-width: 900px;
+  width: 800px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.8);
 }
 
@@ -446,6 +446,10 @@ const close = () => emit('close');
   margin-bottom: 24px;
 }
 
+.close-button.market-section {
+    max-width: 700px;
+}
+
 .modal-section h3 {
   margin: 0 0 8px;
   font-size: 14px;
@@ -470,7 +474,8 @@ const close = () => emit('close');
 }
 
 .market-table thead {
-  background: rgba(15, 23, 42, 0.65);
+  text-transform: uppercase;
+  background: #111b31
 }
 
 .market-table th,
@@ -510,20 +515,27 @@ const close = () => emit('close');
 .games-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
-  min-width: 560px;
+  min-width: 260px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  border-radius: 12px;
+  table-layout: fixed;
 }
 
 .games-table thead {
-  background: rgba(30, 41, 59, 0.8);
+  background: #111b31
 }
 
 .games-table th,
 .games-table td {
-  border: 1px solid rgba(71, 85, 105, 0.4);
-  padding: 8px;
+  padding: 6px;
   text-align: center;
   font-size: 12px;
+}
+
+
+.games-table th {
+  text-transform: uppercase;
 }
 
 .score-cell {
