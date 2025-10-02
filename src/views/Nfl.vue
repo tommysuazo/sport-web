@@ -2,6 +2,9 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import axios from 'axios';
 
+import TeamStatsModal from '../components/TeamStatsModal.vue';
+import { buildNflApiUrl } from '../utils/nflApi';
+
 const matchups = ref([]);
 const isLoaded = ref(false);
 const loading = ref(false);
@@ -26,12 +29,16 @@ const modalSummary = ref(null);
 const modalOpponentDefense = ref([]);
 const modalOpponentLabel = ref('');
 
-const API_BASE_URL = 'http://localhost/api/nfl';
-const MATCHUPS_URL = `${API_BASE_URL}/markets/matchups`;
-const MARKETS_URL = `${API_BASE_URL}/markets`;
-const TEAM_AVERAGES_URL = `${API_BASE_URL}/teams/stats/averages`;
-const PLAYER_STATS_URL = (playerId) => `${API_BASE_URL}/players/${playerId}/stats`;
-const TEAM_STATS_URL = (teamId) => `${API_BASE_URL}/teams/${teamId}/stats`;
+const teamModalVisible = ref(false);
+const teamModalTeamId = ref(null);
+const teamModalTeamName = ref('');
+const teamModalMarkets = ref([]);
+
+const MATCHUPS_URL = buildNflApiUrl('markets/matchups');
+const MARKETS_URL = buildNflApiUrl('markets');
+const TEAM_AVERAGES_URL = buildNflApiUrl('teams/stats/averages');
+const PLAYER_STATS_URL = (playerId) => buildNflApiUrl(`players/${playerId}/stats`);
+const TEAM_STATS_URL = (teamId) => buildNflApiUrl(`teams/${teamId}/stats`);
 
 const PLAYER_SECTIONS_CONFIG = [
   {
@@ -185,6 +192,19 @@ function parseNumeric(value) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function resolveMarketObject(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const candidate = entry.market ?? entry.markets ?? null;
+  if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+    return candidate;
+  }
+  const possibleKeys = ['handicap', 'total_points', 'favorite_team_id'];
+  if (possibleKeys.some((key) => entry[key] !== undefined)) {
+    return entry;
+  }
+  return null;
+}
+
 function formatShortDate(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -292,10 +312,12 @@ function formatTeamName(team = {}) {
 }
 
 function computeHandicapForTeam(teamId, marketEntry = {}) {
-  const line = parseNumeric(marketEntry?.markets?.handicap);
+  const markets = resolveMarketObject(marketEntry);
+  if (!markets) return null;
+  const line = parseNumeric(markets.handicap);
   if (line === null) return null;
   const favoriteId = normalizeId(
-    marketEntry?.markets?.favorite_team_id ??
+    markets.favorite_team_id ??
     marketEntry?.favorite_team_id
   );
   if (!teamId || !favoriteId) return line;
@@ -304,8 +326,8 @@ function computeHandicapForTeam(teamId, marketEntry = {}) {
 }
 
 function buildTeamMarkets(teamId, marketEntry) {
-  if (!marketEntry || !marketEntry.markets) return [];
-  const { markets } = marketEntry;
+  const markets = resolveMarketObject(marketEntry);
+  if (!markets) return [];
   const items = [];
   const handicap = computeHandicapForTeam(teamId, marketEntry);
   if (handicap !== null) {
@@ -362,29 +384,35 @@ function calculateAverage(values = []) {
 
 async function fetchTeamStatsMap(teamIds) {
   const result = new Map();
-  for (const teamId of teamIds) {
-    try {
-      const response = await axios.get(TEAM_STATS_URL(teamId));
-      const teamData = response.data ?? {};
-      const scores = toArray(teamData.scores);
-      if (!scores.length) {
-        result.set(teamId, { averages: {} });
-        continue;
+  const ids = Array.isArray(teamIds) ? teamIds : Array.from(teamIds ?? []);
+  if (!ids.length) return result;
+
+  await Promise.all(
+    ids.map(async (teamId) => {
+      try {
+        const response = await axios.get(TEAM_STATS_URL(teamId));
+        const teamData = response.data ?? {};
+        const scores = toArray(teamData.scores);
+        if (!scores.length) {
+          result.set(teamId, { averages: {} });
+          return;
+        }
+        const keys = ['points_total', 'total_yards', 'passing_yards', 'rushing_yards', 'receiving_yards', 'sacks', 'tackles'];
+        const averages = {};
+        keys.forEach((key) => {
+          const numericValues = scores
+            .map((score) => parseNumeric(score?.[key]))
+            .filter((value) => value !== null);
+          const average = calculateAverage(numericValues);
+          if (average !== null) averages[key] = average;
+        });
+        result.set(teamId, { averages });
+      } catch (error) {
+        console.error('Unable to load team stats', teamId, error);
       }
-      const keys = ['points_total', 'total_yards', 'passing_yards', 'rushing_yards', 'receiving_yards', 'sacks', 'tackles'];
-      const averages = {};
-      keys.forEach((key) => {
-        const numericValues = scores
-          .map((score) => parseNumeric(score?.[key]))
-          .filter((value) => value !== null);
-        const average = calculateAverage(numericValues);
-        if (average !== null) averages[key] = average;
-      });
-      result.set(teamId, { averages });
-    } catch (error) {
-      console.error('Unable to load team stats', teamId, error);
-    }
-  }
+    })
+  );
+
   return result;
 }
 
@@ -782,6 +810,20 @@ function closeModal() {
   modalOpponentLabel.value = '';
 }
 
+function openTeamStatsModal(team) {
+  const teamId = normalizeId(team?.id ?? team?.team_id ?? team?.teamId);
+  if (!teamId) return;
+  teamModalTeamId.value = teamId;
+  teamModalTeamName.value = formatTeamName(team ?? {});
+  teamModalMarkets.value = Array.isArray(team?.markets) ? team.markets : [];
+  teamModalVisible.value = true;
+}
+
+function closeTeamStatsModal() {
+  teamModalVisible.value = false;
+  teamModalMarkets.value = [];
+}
+
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
 });
@@ -826,7 +868,15 @@ onUnmounted(() => {
 
               <div class="team-section">
                 <h4>Mercados</h4>
-                <div v-if="matchup.away_team?.markets?.length" class="market-table-wrapper">
+                <div
+                  v-if="matchup.away_team?.markets?.length"
+                  class="market-table-wrapper team-market-trigger"
+                  role="button"
+                  tabindex="0"
+                  @click="openTeamStatsModal(matchup.away_team)"
+                  @keydown.enter.prevent="openTeamStatsModal(matchup.away_team)"
+                  @keydown.space.prevent="openTeamStatsModal(matchup.away_team)"
+                >
                   <table class="market-table">
                     <thead>
                       <tr>
@@ -958,7 +1008,15 @@ onUnmounted(() => {
 
               <div class="team-section">
                 <h4>Mercados</h4>
-                <div v-if="matchup.home_team?.markets?.length" class="market-table-wrapper">
+                <div
+                  v-if="matchup.home_team?.markets?.length"
+                  class="market-table-wrapper team-market-trigger"
+                  role="button"
+                  tabindex="0"
+                  @click="openTeamStatsModal(matchup.home_team)"
+                  @keydown.enter.prevent="openTeamStatsModal(matchup.home_team)"
+                  @keydown.space.prevent="openTeamStatsModal(matchup.home_team)"
+                >
                   <table class="market-table">
                     <thead>
                       <tr>
@@ -1195,6 +1253,17 @@ onUnmounted(() => {
       </div>
     </div>
   </transition>
+
+  <transition name="modal-fade">
+    <TeamStatsModal
+      v-if="teamModalVisible"
+      :visible="teamModalVisible"
+      :team-id="teamModalTeamId"
+      :team-name="teamModalTeamName"
+      :markets="teamModalMarkets"
+      @close="closeTeamStatsModal"
+    />
+  </transition>
 </template>
 
 <style scoped>
@@ -1318,6 +1387,22 @@ onUnmounted(() => {
 
 .market-table-wrapper {
   overflow-x: auto;
+}
+
+.team-market-trigger {
+  cursor: pointer;
+  border-radius: 12px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.team-market-trigger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+.team-market-trigger:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.8);
+  outline-offset: 4px;
 }
 
 .market-table {

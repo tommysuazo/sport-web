@@ -64,6 +64,8 @@
 import { computed, ref, watch } from 'vue';
 import axios from 'axios';
 
+import { buildNflApiUrl } from '../utils/nflApi';
+
 const STAT_TYPES = [
   'passing_yards',
   'pass_completions',
@@ -166,13 +168,15 @@ function colorByLine(value, line) {
   return 'stat-equal';
 }
 
+const PLAYER_STATS_URL = (playerId) => buildNflApiUrl(`players/${playerId}/stats`);
+
 async function fetchPlayerStats() {
   if (!props.playerId) return;
 
   loading.value = true;
   error.value = '';
   try {
-    const { data } = await axios.get(`http://localhost/api/nfl/players/${props.playerId}/stats`);
+    const { data } = await axios.get(PLAYER_STATS_URL(props.playerId));
     const parsedStats = Array.isArray(data.stats) ? data.stats : [];
     playerStats.value = parsedStats;
   } catch (err) {
