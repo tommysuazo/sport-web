@@ -13,7 +13,6 @@ const errorMessage = ref('');
 const rawMatchupsData = ref([]);
 const marketsByGameMap = ref(new Map());
 const teamAverageMapRef = ref(new Map());
-const teamStatsMapRef = ref(new Map());
 const playerInfoMapRef = ref(new Map());
 const playerStatsCache = ref(new Map());
 
@@ -38,7 +37,6 @@ const MATCHUPS_URL = buildNflApiUrl('markets/matchups');
 const MARKETS_URL = buildNflApiUrl('markets');
 const TEAM_AVERAGES_URL = buildNflApiUrl('teams/stats/averages');
 const PLAYER_STATS_URL = (playerId) => buildNflApiUrl(`players/${playerId}/stats`);
-const TEAM_STATS_URL = (teamId) => buildNflApiUrl(`teams/${teamId}/stats`);
 
 const PLAYER_SECTIONS_CONFIG = [
   {
@@ -311,18 +309,21 @@ function formatTeamName(team = {}) {
   );
 }
 
+function computeSignedHandicap(teamId, rawLine, favoriteTeamId) {
+  const normalizedTeamId = normalizeId(teamId);
+  const normalizedFavoriteId = normalizeId(favoriteTeamId);
+  const line = parseNumeric(rawLine);
+  if (line === null) return null;
+  if (!normalizedTeamId || !normalizedFavoriteId) return line;
+  const absolute = Math.abs(line);
+  return normalizedTeamId === normalizedFavoriteId ? -absolute : absolute;
+}
+
 function computeHandicapForTeam(teamId, marketEntry = {}) {
   const markets = resolveMarketObject(marketEntry);
   if (!markets) return null;
-  const line = parseNumeric(markets.handicap);
-  if (line === null) return null;
-  const favoriteId = normalizeId(
-    markets.favorite_team_id ??
-    marketEntry?.favorite_team_id
-  );
-  if (!teamId || !favoriteId) return line;
-  const absolute = Math.abs(line);
-  return teamId === favoriteId ? -absolute : absolute;
+  const favoriteId = markets.favorite_team_id ?? marketEntry?.favorite_team_id;
+  return computeSignedHandicap(teamId, markets.handicap, favoriteId);
 }
 
 function buildTeamMarkets(teamId, marketEntry) {
@@ -337,7 +338,13 @@ function buildTeamMarkets(teamId, marketEntry) {
     items.push({ label: 'Total Points', shortLabel: 'PTS', value: formatMarketValue(markets.total_points) });
   }
   if (markets.first_half_handicap !== null && markets.first_half_handicap !== undefined) {
-    items.push({ label: 'H1 Handicap', shortLabel: 'H1 HC', value: formatMarketValue(markets.first_half_handicap) });
+    const firstHalfFavoriteId =
+      markets.first_half_favorite_team_id ??
+      marketEntry?.first_half_favorite_team_id ??
+      markets.favorite_team_id ??
+      marketEntry?.favorite_team_id;
+    const firstHalfHandicap = computeSignedHandicap(teamId, markets.first_half_handicap, firstHalfFavoriteId);
+    items.push({ label: 'H1 Handicap', shortLabel: 'H1 HC', value: formatMarketValue(firstHalfHandicap) });
   }
   if (markets.first_half_points !== null && markets.first_half_points !== undefined) {
     items.push({ label: 'H1 Total Points', shortLabel: 'H1 PTS', value: formatMarketValue(markets.first_half_points) });
@@ -382,39 +389,6 @@ function calculateAverage(values = []) {
   return Number((sum / values.length).toFixed(1));
 }
 
-async function fetchTeamStatsMap(teamIds) {
-  const result = new Map();
-  const ids = Array.isArray(teamIds) ? teamIds : Array.from(teamIds ?? []);
-  if (!ids.length) return result;
-
-  await Promise.all(
-    ids.map(async (teamId) => {
-      try {
-        const response = await axios.get(TEAM_STATS_URL(teamId));
-        const teamData = response.data ?? {};
-        const scores = toArray(teamData.scores);
-        if (!scores.length) {
-          result.set(teamId, { averages: {} });
-          return;
-        }
-        const keys = ['points_total', 'total_yards', 'passing_yards', 'rushing_yards', 'receiving_yards', 'sacks', 'tackles'];
-        const averages = {};
-        keys.forEach((key) => {
-          const numericValues = scores
-            .map((score) => parseNumeric(score?.[key]))
-            .filter((value) => value !== null);
-          const average = calculateAverage(numericValues);
-          if (average !== null) averages[key] = average;
-        });
-        result.set(teamId, { averages });
-      } catch (error) {
-        console.error('Unable to load team stats', teamId, error);
-      }
-    })
-  );
-
-  return result;
-}
 
 async function fetchPlayerStats(playerId) {
   if (!playerId) return null;
@@ -459,18 +433,17 @@ function resolveLastFiveClass(lastFive) {
   return baseClass;
 }
 
-function buildRankList(teamId, defs, averagesMap, teamStatsMap, branchKey) {
+function buildRankList(teamId, defs, averagesMap, branchKey) {
   const normalizedId = normalizeId(teamId);
   if (!normalizedId) return [];
   const averagesEntry = averagesMap.get(normalizedId) ?? {};
   const branch = averagesEntry[branchKey] ?? averagesEntry[branchKey === 'ofensive' ? 'offensive' : 'defensive'];
-  const fallback = teamStatsMap.get(normalizedId)?.averages ?? {};
   return defs
     .map((definition) => {
       const averageData = definition.keys
         .map((key) => branch?.[key])
         .find((value) => value && (value.value !== undefined || value.rank !== undefined));
-      const value = averageData?.value ?? fallback[definition.fallbackKey];
+      const value = averageData?.value;
       if (value === null || value === undefined) return null;
       return {
         label: definition.label,
@@ -547,7 +520,7 @@ function buildPlayerSections(teamId, marketEntry, playerInfoMap, playerStatsMap)
   return sections.filter((section) => section.rows.length);
 }
 
-function buildEnrichedTeam(rawTeam, marketEntry, averagesMap, teamStatsMap, playerInfoMap, playerStatsMap, opponentTeam) {
+function buildEnrichedTeam(rawTeam, marketEntry, averagesMap, playerInfoMap, playerStatsMap, opponentTeam) {
   const teamId = normalizeId(rawTeam?.id ?? rawTeam?.team_id ?? rawTeam?.teamId);
   const opponentId = normalizeId(opponentTeam?.id ?? opponentTeam?.team_id ?? opponentTeam?.teamId);
   return {
@@ -555,15 +528,15 @@ function buildEnrichedTeam(rawTeam, marketEntry, averagesMap, teamStatsMap, play
     id: teamId,
     display_name: formatTeamName(rawTeam),
     markets: buildTeamMarkets(teamId, marketEntry),
-    offenseRanks: buildRankList(teamId, OFFENSE_RANK_DEFS, averagesMap, teamStatsMap, 'ofensive'),
-    opponentDefenseRanks: buildRankList(opponentId, DEFENSE_RANK_DEFS, averagesMap, teamStatsMap, 'defensive'),
+    offenseRanks: buildRankList(teamId, OFFENSE_RANK_DEFS, averagesMap, 'ofensive'),
+    opponentDefenseRanks: buildRankList(opponentId, DEFENSE_RANK_DEFS, averagesMap, 'defensive'),
     playerSections: buildPlayerSections(teamId, marketEntry, playerInfoMap, playerStatsMap),
     opponent_display_name: opponentTeam ? formatTeamName(opponentTeam) : null,
     opponent_code: opponentTeam?.code ?? opponentTeam?.abbreviation ?? null,
   };
 }
 
-function enrichMatchups(rawMatchups, marketsByGame, averagesMap, teamStatsMap, playerInfoMap, playerStatsMap) {
+function enrichMatchups(rawMatchups, marketsByGame, averagesMap, playerInfoMap, playerStatsMap) {
   return rawMatchups.map((rawMatchup) => {
     const matchupKey = getMatchupKey(rawMatchup) ?? normalizeId(rawMatchup.matchup_id);
     const marketEntry = marketsByGame.get(matchupKey) ?? marketsByGame.get(normalizeId(rawMatchup.market_id)) ?? null;
@@ -573,7 +546,6 @@ function enrichMatchups(rawMatchups, marketsByGame, averagesMap, teamStatsMap, p
       rawMatchup.home_team ?? {},
       marketEntry,
       averagesMap,
-      teamStatsMap,
       playerInfoMap,
       playerStatsMap,
       rawMatchup.away_team ?? {}
@@ -582,7 +554,6 @@ function enrichMatchups(rawMatchups, marketsByGame, averagesMap, teamStatsMap, p
       rawMatchup.away_team ?? {},
       marketEntry,
       averagesMap,
-      teamStatsMap,
       playerInfoMap,
       playerStatsMap,
       rawMatchup.home_team ?? {}
@@ -602,7 +573,6 @@ function rebuildMatchups() {
     rawMatchupsData.value,
     marketsByGameMap.value,
     teamAverageMapRef.value,
-    teamStatsMapRef.value,
     playerInfoMapRef.value,
     playerStatsCache.value
   );
@@ -622,14 +592,11 @@ async function loadMatchups() {
     const teamAverageEntries = extractTeamAverages(averagesResponse.data ?? averagesResponse);
     const teamAverageMap = buildTeamAverageMap(teamAverageEntries);
 
-    const teamIds = new Set();
     const playerInfoMap = new Map();
 
     rawMatchups.forEach((matchup) => {
       const homeTeamId = normalizeId(matchup.home_team_id ?? matchup.home_team?.id);
       const awayTeamId = normalizeId(matchup.away_team_id ?? matchup.away_team?.id);
-      if (homeTeamId) teamIds.add(homeTeamId);
-      if (awayTeamId) teamIds.add(awayTeamId);
 
       toArray(matchup.home_team?.players).forEach((player) => {
         const playerId = normalizeId(player?.id ?? player?.player_id);
@@ -649,11 +616,6 @@ async function loadMatchups() {
       const key = getMatchupKey(entry);
       if (key) marketsByGame.set(key, entry);
 
-      const homeTeamId = normalizeId(entry.home_team_id ?? entry.home_team?.id);
-      const awayTeamId = normalizeId(entry.away_team_id ?? entry.away_team?.id);
-      if (homeTeamId) teamIds.add(homeTeamId);
-      if (awayTeamId) teamIds.add(awayTeamId);
-
       toArray(entry.player_markets).forEach((playerMarket) => {
         const playerId = normalizeId(playerMarket.player_id);
         if (!playerId) return;
@@ -663,12 +625,9 @@ async function loadMatchups() {
       });
     });
 
-    const teamStatsMap = await fetchTeamStatsMap(teamIds);
-
     rawMatchupsData.value = rawMatchups;
     marketsByGameMap.value = marketsByGame;
     teamAverageMapRef.value = teamAverageMap;
-    teamStatsMapRef.value = teamStatsMap;
     playerInfoMapRef.value = playerInfoMap;
     playerStatsCache.value = new Map();
 
