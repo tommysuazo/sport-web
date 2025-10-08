@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue';
 import axios from 'axios';
 
 import TeamStatsModal from '../components/TeamStatsModal.vue';
+import PickList from '../components/PickList.vue';
 import { buildNflApiUrl } from '../utils/nflApi';
 
 const matchups = ref([]);
@@ -15,6 +16,8 @@ const marketsByGameMap = ref(new Map());
 const teamAverageMapRef = ref(new Map());
 const playerInfoMapRef = ref(new Map());
 const playerStatsCache = ref(new Map());
+const pickList = ref([]);
+const isPickListOpen = ref(false);
 
 const modalVisible = ref(false);
 const modalLoading = ref(false);
@@ -210,6 +213,17 @@ function formatShortDate(value) {
   return date.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit' });
 }
 
+function formatFullDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (num) => num.toString().padStart(2, '0');
+  const day = pad(date.getUTCDate());
+  const month = pad(date.getUTCMonth() + 1);
+  const year = date.getUTCFullYear();
+  return `${day}/${month}/${year}`;
+}
+
 function resolveStatDate(stat) {
   const value = stat?.played_at ?? stat?.date ?? stat?.game_date ?? stat?.game?.played_at;
   return formatShortDate(value);
@@ -309,6 +323,20 @@ function formatTeamName(team = {}) {
   );
 }
 
+function resolveTeamCode(team = {}) {
+  return team.code ?? team.abbreviation ?? team.short_name ?? team.nickname ?? team.name ?? 'TEAM';
+}
+
+function buildTeamPickKey(teamId, market) {
+  const label = market?.label ?? market?.shortLabel ?? 'market';
+  const value = market?.value ?? market?.rawValue ?? market?.handicap ?? market?.total_points ?? '';
+  return `team:${teamId ?? 'unknown'}:${label}:${value}`;
+}
+
+function buildPlayerPickKey(teamId, playerId, sectionKey, statKey) {
+  return `player:${teamId ?? 'unknown'}:${playerId ?? 'unknown'}:${sectionKey ?? 'section'}:${statKey ?? 'stat'}`;
+}
+
 function computeSignedHandicap(teamId, rawLine, favoriteTeamId) {
   const normalizedTeamId = normalizeId(teamId);
   const normalizedFavoriteId = normalizeId(favoriteTeamId);
@@ -383,13 +411,6 @@ function buildTeamAverageMap(entries) {
   return map;
 }
 
-function calculateAverage(values = []) {
-  if (!values.length) return null;
-  const sum = values.reduce((acc, val) => acc + val, 0);
-  return Number((sum / values.length).toFixed(1));
-}
-
-
 async function fetchPlayerStats(playerId) {
   if (!playerId) return null;
   try {
@@ -431,6 +452,21 @@ function resolveLastFiveClass(lastFive) {
   if (lastFive.success > half) return `${baseClass} stat-meta--positive`;
   if (lastFive.success < half) return `${baseClass} stat-meta--negative`;
   return baseClass;
+}
+
+function describeLastFive(lastFive) {
+  if (!lastFive || !lastFive.total) return null;
+  const success = Number(lastFive.success ?? 0);
+  const total = Number(lastFive.total ?? 0);
+  if (!total) return null;
+  const half = total / 2;
+  let trend = 'neutral';
+  if (success > half) trend = 'positive';
+  else if (success < half) trend = 'negative';
+  return {
+    text: `(${success}/${total})`,
+    trend,
+  };
 }
 
 function buildRankList(teamId, defs, averagesMap, branchKey) {
@@ -520,6 +556,134 @@ function buildPlayerSections(teamId, marketEntry, playerInfoMap, playerStatsMap)
   return sections.filter((section) => section.rows.length);
 }
 
+function createPickEntryId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function addPickEntry(entry) {
+  if (!entry || !entry.key) return;
+  const exists = pickList.value.some((item) => item.key === entry.key);
+  if (exists) return;
+  pickList.value = [...pickList.value, entry];
+}
+
+function handleMarketPick(event, teamContext, market) {
+  event?.stopPropagation?.();
+  if (!teamContext || !market) return;
+  const teamId = normalizeId(teamContext.id ?? teamContext.team_id ?? teamContext.teamId);
+  const key = buildTeamPickKey(teamId, market);
+  const entry = {
+    id: createPickEntryId(),
+    key,
+    type: 'team',
+    teamCode: resolveTeamCode(teamContext),
+    teamId,
+    playerName: null,
+    marketLabel: market.label ?? market.shortLabel ?? 'Market',
+    value: market.value ?? '-',
+    valueClass: 'pick-list__value--team',
+    lastFiveText: '',
+    lastFiveClass: '',
+  };
+  addPickEntry(entry);
+}
+
+function handlePlayerPick(event, teamContext, section, row, column) {
+  event?.stopPropagation?.();
+  if (!row || !column || !teamContext) return;
+  const metric = row.metrics?.[column.key];
+  if (!metric) return;
+  const lastFiveMeta = describeLastFive(metric.lastFive);
+  const sectionLabel = typeof section?.key === 'string' ? section.key.toUpperCase() : '';
+  const columnLabelSource = column.label ?? column.key;
+  const columnLabel = columnLabelSource ? String(columnLabelSource).toUpperCase() : '';
+  const marketLabel = [sectionLabel, columnLabel].filter(Boolean).join(' ').trim();
+  const teamId = normalizeId(teamContext.id ?? teamContext.team_id ?? teamContext.teamId);
+  const playerId = normalizeId(row.id);
+  const statKey = column.statKey ?? column.key;
+  const key = buildPlayerPickKey(teamId, playerId, section?.key ?? null, statKey);
+  const entry = {
+    id: createPickEntryId(),
+    key,
+    type: 'player',
+    teamCode: resolveTeamCode(teamContext),
+    teamId,
+    playerId,
+    sectionKey: section?.key ?? null,
+    statKey,
+    playerName: row.name ?? null,
+    marketLabel: marketLabel || columnLabelSource || 'STAT',
+    value: metric.value ?? '-',
+    valueClass: 'pick-list__value--player',
+    lastFiveText: lastFiveMeta?.text ?? '',
+    lastFiveClass: lastFiveMeta ? `pick-list__last-five--${lastFiveMeta.trend}` : '',
+  };
+  addPickEntry(entry);
+}
+
+function togglePickList() {
+  if (!pickList.value.length) return;
+  isPickListOpen.value = !isPickListOpen.value;
+}
+
+function closePickList() {
+  isPickListOpen.value = false;
+}
+
+function handlePickEntryRemove(entry) {
+  if (!entry?.key) return;
+  pickList.value = pickList.value.filter((item) => item.key !== entry.key);
+  if (!pickList.value.length) {
+    isPickListOpen.value = false;
+  }
+}
+
+function findTeamSectionRow(teamId, sectionKey, playerId) {
+  const normalizedTeamId = normalizeId(teamId);
+  if (!normalizedTeamId) return null;
+  for (const matchup of matchups.value) {
+    const teams = [matchup.away_team, matchup.home_team];
+    for (const team of teams) {
+      if (!team) continue;
+      if (normalizeId(team.id) !== normalizedTeamId) continue;
+      if (!sectionKey) {
+        return { team };
+      }
+      const section = team.playerSections?.find((item) => item.key === sectionKey);
+      if (!section) return { team };
+      if (!playerId) {
+        return { team, section };
+      }
+      const normalizedPlayerId = normalizeId(playerId);
+      const row = section.rows?.find((entry) => normalizeId(entry.id) === normalizedPlayerId);
+      if (!row) {
+        return { team, section };
+      }
+      return { team, section, row };
+    }
+  }
+  return null;
+}
+
+function handlePickEntrySelect(entry) {
+  if (!entry) return;
+  if (entry.type === 'player') {
+    const located = findTeamSectionRow(entry.teamId, entry.sectionKey, entry.playerId);
+    if (!located || !located.team || !located.section || !located.row) {
+      console.warn('Unable to resolve pick entry for modal', entry);
+      return;
+    }
+    handlePlayerClick(located.row, located.section, located.team);
+  } else if (entry.type === 'team') {
+    const located = findTeamSectionRow(entry.teamId, null, null);
+    if (!located || !located.team) {
+      console.warn('Unable to resolve team pick entry', entry);
+      return;
+    }
+    openTeamStatsModal(located.team);
+  }
+}
+
 function buildEnrichedTeam(rawTeam, marketEntry, averagesMap, playerInfoMap, playerStatsMap, opponentTeam) {
   const teamId = normalizeId(rawTeam?.id ?? rawTeam?.team_id ?? rawTeam?.teamId);
   const opponentId = normalizeId(opponentTeam?.id ?? opponentTeam?.team_id ?? opponentTeam?.teamId);
@@ -542,6 +706,7 @@ function enrichMatchups(rawMatchups, marketsByGame, averagesMap, playerInfoMap, 
     const marketEntry = marketsByGame.get(matchupKey) ?? marketsByGame.get(normalizeId(rawMatchup.market_id)) ?? null;
     const homeTeamId = normalizeId(rawMatchup.home_team_id ?? rawMatchup.home_team?.id);
     const awayTeamId = normalizeId(rawMatchup.away_team_id ?? rawMatchup.away_team?.id);
+    const scheduledAt = rawMatchup.scheduled_at ?? rawMatchup.played_at ?? rawMatchup.date;
     const homeTeam = buildEnrichedTeam(
       rawMatchup.home_team ?? {},
       marketEntry,
@@ -561,7 +726,8 @@ function enrichMatchups(rawMatchups, marketsByGame, averagesMap, playerInfoMap, 
     return {
       ...rawMatchup,
       id: matchupKey ?? normalizeId(rawMatchup.id),
-      scheduled_at: rawMatchup.scheduled_at ?? rawMatchup.played_at ?? rawMatchup.date,
+      scheduled_at: scheduledAt,
+      scheduled_display: formatFullDateTime(scheduledAt),
       home_team: homeTeam,
       away_team: awayTeam,
     };
@@ -750,6 +916,10 @@ async function openPlayerModal(row, section, teamContext) {
 
 function handleGlobalKeydown(event) {
   if (event.key === 'Escape' || event.key === 'Esc') {
+    if (isPickListOpen.value) {
+      closePickList();
+      return;
+    }
     if (modalVisible.value) {
       closeModal();
     }
@@ -815,8 +985,8 @@ onUnmounted(() => {
             <h2 class="game-title">
               {{ formatTeamName(matchup.away_team) }} vs {{ formatTeamName(matchup.home_team) }}
             </h2>
-            <p v-if="matchup.scheduled_at" class="game-meta">
-              {{ matchup.scheduled_at }}
+            <p v-if="matchup.scheduled_display || matchup.scheduled_at" class="game-meta">
+              {{ matchup.scheduled_display || formatFullDateTime(matchup.scheduled_at) }}
             </p>
           </header>
 
@@ -850,7 +1020,11 @@ onUnmounted(() => {
                     </thead>
                     <tbody>
                       <tr>
-                        <td v-for="market in matchup.away_team.markets" :key="`${market.label}-${market.value}`">
+                        <td
+                          v-for="market in matchup.away_team.markets"
+                          :key="`${market.label}-${market.value}`"
+                          @contextmenu.prevent="handleMarketPick($event, matchup.away_team, market)"
+                        >
                           <span class="market-value">{{ market.value }}</span>
                         </td>
                       </tr>
@@ -939,7 +1113,10 @@ onUnmounted(() => {
                               {{ row.position }}
                             </template>
                             <template v-else>
-                              <div class="stat-cell">
+                              <div
+                                class="stat-cell"
+                                @contextmenu.prevent="handlePlayerPick($event, matchup.away_team, section, row, column)"
+                              >
                                 <span class="stat-value">
                                   {{ row.metrics[column.key]?.value ?? '-' }}
                                   <span
@@ -990,7 +1167,11 @@ onUnmounted(() => {
                     </thead>
                     <tbody>
                       <tr>
-                        <td v-for="market in matchup.home_team.markets" :key="`${market.label}-${market.value}`">
+                        <td
+                          v-for="market in matchup.home_team.markets"
+                          :key="`${market.label}-${market.value}`"
+                          @contextmenu.prevent="handleMarketPick($event, matchup.home_team, market)"
+                        >
                           <span class="market-value">{{ market.value }}</span>
                         </td>
                       </tr>
@@ -1079,7 +1260,10 @@ onUnmounted(() => {
                               {{ row.position }}
                             </template>
                             <template v-else>
-                              <div class="stat-cell">
+                              <div
+                                class="stat-cell"
+                                @contextmenu.prevent="handlePlayerPick($event, matchup.home_team, section, row, column)"
+                              >
                                 <span class="stat-value">
                                   {{ row.metrics[column.key]?.value ?? '-' }}
                                   <span
@@ -1105,6 +1289,16 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
+
+  <PickList
+    :items="pickList"
+    :count="pickList.length"
+    :open="isPickListOpen"
+    @toggle="togglePickList"
+    @close="closePickList"
+    @select="handlePickEntrySelect"
+    @remove="handlePickEntryRemove"
+  />
 
   <transition name="modal-fade">
     <div
