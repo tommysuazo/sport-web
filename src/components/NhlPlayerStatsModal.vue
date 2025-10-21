@@ -13,8 +13,8 @@
         <div class="modal-summary-row">
           <section class="modal-summary-card">
             <header class="modal-summary-title">{{ defenseTitle }}</header>
-            <div v-if="defenseStats.length" class="modal-summary-table-wrapper">
-              <table class="modal-summary-table rank-table">
+            <div v-if="defenseStats.length" class="modal-summary-table-wrapper market-table-wrapper">
+              <table class="modal-summary-table market-table rank-table">
                 <thead>
                   <tr>
                     <th v-for="stat in defenseStats" :key="`def-head-${stat.label}`">
@@ -37,8 +37,8 @@
 
           <section class="modal-summary-card">
             <header class="modal-summary-title">MARKETS</header>
-            <div v-if="marketColumns.length" class="modal-summary-table-wrapper">
-              <table class="modal-summary-table">
+            <div v-if="marketColumns.length" class="modal-summary-table-wrapper market-table-wrapper">
+              <table class="modal-summary-table market-table">
                 <thead>
                   <tr>
                     <th v-for="column in marketColumns" :key="`market-head-${column.key}`">
@@ -49,7 +49,7 @@
                 <tbody>
                   <tr>
                     <td v-for="column in marketColumns" :key="`market-val-${column.key}`">
-                      {{ marketRow[column.key] ?? '-' }}
+                      <span class="market-value">{{ marketRow[column.key] ?? '-' }}</span>
                     </td>
                   </tr>
                 </tbody>
@@ -61,11 +61,11 @@
 
         <h4 class="modal-section-title">{{ sectionTitle }}</h4>
 
-        <div class="modal-stats-table-wrapper">
+        <div class="modal-stats-table-wrapper games-table-wrapper">
           <div v-if="loading" class="modal-state">Loading statistics...</div>
           <div v-else-if="error" class="modal-state error">{{ error }}</div>
           <template v-else>
-            <table v-if="performanceRows.length" class="modal-stats-table">
+            <table v-if="performanceRows.length" class="modal-stats-table games-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -449,14 +449,21 @@ function formatNumber(value) {
 }
 
 .modal-content {
-  background: #0f172a;
+  background: #0a0e1a;
+  color: #e2e8f0;
+  padding: 24px;
+  border-radius: 12px;
+  max-height: 85vh;
+  overflow-y: auto;
+  width: 800px;
+  /* background: #0f172a;
   color: #e2e8f0;
   padding: 24px;
   border-radius: 12px;
   max-height: 85vh;
   overflow-y: auto;
   min-width: 960px;
-  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.8);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.8); */
 }
 
 .player-modal-header {
@@ -519,22 +526,25 @@ function formatNumber(value) {
 }
 
 .modal-summary-card {
-  flex: 1 1 280px;
-  min-width: 240px;
-  background: rgba(30, 41, 59, 0.9);
-  border-radius: 8px;
-  padding: 16px;
+  flex: 1 1 0;
+  min-width: 320px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  overflow-x: auto;
 }
 
 .modal-summary-title {
-  margin: 0;
-  font-size: 12px;
+  margin: 0 0 8px;
+  font-size: 14px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: #38bdf8;
+  text-align: center;
+  font-weight: bold;
 }
 
 .modal-summary-table-wrapper {
@@ -568,6 +578,52 @@ function formatNumber(value) {
   color: #f8fafc;
 }
 
+.market-table-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
+.market-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 260px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  border-radius: 12px;
+  table-layout: fixed;
+}
+
+.market-table thead {
+  text-transform: uppercase;
+  background: #111b31;
+}
+
+.market-table th,
+.market-table td {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #cbd5f5;
+  text-align: center;
+  letter-spacing: 0.04em;
+  border: none;
+}
+
+.market-table th {
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.market-table td {
+  font-size: 14px;
+  color: #facc15;
+  font-weight: 600;
+}
+
+.market-value {
+  font-weight: 600;
+  color: #facc15;
+}
+
 .rank-table td {
   color: #f8fafc;
 }
@@ -592,10 +648,11 @@ function formatNumber(value) {
 
 .modal-section-title {
   margin: 0;
-  font-size: 13px;
-  letter-spacing: 0.06em;
+  font-size: 14px;
   text-transform: uppercase;
   color: #38bdf8;
+  text-align: center;
+  font-weight: bold;
 }
 
 .modal-stats-table-wrapper {
@@ -603,7 +660,6 @@ function formatNumber(value) {
   flex-direction: column;
   gap: 12px;
   border-top: 1px solid rgba(148, 163, 184, 0.1);
-  padding-top: 16px;
 }
 
 .modal-stats-table {
@@ -612,8 +668,22 @@ function formatNumber(value) {
   font-size: 12px;
 }
 
+.games-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 260px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  border-radius: 12px;
+  table-layout: fixed;
+}
+
 .modal-stats-table thead {
   background: rgba(30, 41, 59, 0.8);
+}
+
+.games-table thead {
+  background: #111b31;
 }
 
 .modal-stats-table th,
@@ -623,10 +693,26 @@ function formatNumber(value) {
   text-align: center;
 }
 
+.games-table th,
+.games-table td {
+  padding: 6px;
+  text-align: center;
+  font-size: 12px;
+  border: none;
+}
+
 .modal-stats-table th {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #cbd5f5;
+}
+
+.games-table th {
+  text-transform: uppercase;
+}
+
+.games-table-wrapper {
+  overflow-x: auto;
 }
 
 .modal-stats-table td:first-child,
@@ -637,6 +723,13 @@ function formatNumber(value) {
 .modal-stats-table td:nth-child(2),
 .modal-stats-table th:nth-child(2) {
   text-align: left;
+}
+
+.games-table td:first-child,
+.games-table th:first-child,
+.games-table td:nth-child(2),
+.games-table th:nth-child(2) {
+  text-align: center;
 }
 
 .value-cell {
