@@ -25,6 +25,7 @@ const playerModalState = ref({
   playerPosition: '',
   market: {},
   initialStats: [],
+  opponentDefense: [],
 });
 const teamModalState = ref({
   visible: false,
@@ -1004,6 +1005,39 @@ function resolveLastFiveClass(lastFive) {
   return 'pick-list__last-five--neutral';
 }
 
+function resolveStatMetricValue(statEntry, key) {
+  if (!statEntry || !key) return null;
+  if (key === 'pt3') {
+    return readStatNumeric(statEntry, 'three_pointers_made', 'threePointersMade', 'threes_made', 'threesMade');
+  }
+  if (key === 'pra') {
+    const points = readStatNumeric(statEntry, 'points', 'pts');
+    const rebounds = readStatNumeric(statEntry, 'rebounds', 'rebs');
+    const assists = readStatNumeric(statEntry, 'assists', 'asts');
+    if (points === null && rebounds === null && assists === null) return null;
+    return (points ?? 0) + (rebounds ?? 0) + (assists ?? 0);
+  }
+  const camelKey = toCamelCaseKey(key);
+  return readStatNumeric(statEntry, key, camelKey);
+}
+
+function readStatNumeric(statEntry, ...keys) {
+  for (const key of keys) {
+    if (!key) continue;
+    const value = parseNumeric(statEntry?.[key]);
+    if (value !== null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function toCamelCaseKey(key) {
+  if (typeof key !== 'string' || !key.length) return null;
+  if (!key.includes('_')) return key;
+  return key.replace(/_([a-z0-9])/g, (_, char) => (char ? char.toUpperCase() : ''));
+}
+
 function computeLastFive(statsList, key, targetValue) {
   if (targetValue === null || targetValue === undefined) return null;
   const stats = Array.isArray(statsList) ? statsList : [];
@@ -1012,7 +1046,7 @@ function computeLastFive(statsList, key, targetValue) {
   if (!recent.length) return null;
   let success = 0;
   recent.forEach((stat) => {
-    const statValue = parseNumeric(stat?.[key]);
+    const statValue = resolveStatMetricValue(stat, key);
     if (statValue !== null && statValue >= targetValue) {
       success += 1;
     }
@@ -1144,6 +1178,9 @@ function openPlayerModal(teamContext, playerRow) {
   const teamCode = resolveTeamCode(teamContext);
   const opponentCode = teamContext?.opponentCode ?? '';
   const marketSnapshot = playerRow.market ?? {};
+  const opponentDefense = Array.isArray(teamContext?.opponentDefenseRanks)
+    ? teamContext.opponentDefenseRanks
+    : [];
 
   playerModalState.value = {
     visible: true,
@@ -1155,6 +1192,7 @@ function openPlayerModal(teamContext, playerRow) {
     playerPosition: playerRow.position ?? '',
     market: marketSnapshot,
     initialStats: baselineStats,
+    opponentDefense,
   };
 }
 
@@ -1169,6 +1207,7 @@ function closePlayerModal() {
     playerPosition: '',
     market: {},
     initialStats: [],
+    opponentDefense: [],
   };
 }
 </script>
@@ -1426,6 +1465,7 @@ function closePlayerModal() {
         :player-position="playerModalState.playerPosition"
         :market="playerModalState.market"
         :initial-stats="playerModalState.initialStats"
+        :opponent-defense="playerModalState.opponentDefense"
         @close="closePlayerModal"
       />
     </transition>

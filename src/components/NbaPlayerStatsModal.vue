@@ -1,70 +1,93 @@
 <template>
   <div class="modal-backdrop" @click.self="close">
     <div class="modal-content">
+      <!-- HEADER -->
       <header class="modal-header">
-        <div class="modal-header__title">
-          <h3 class="modal-title">{{ playerName }}</h3>
-          <p v-if="playerSubtitle" class="modal-subtitle">{{ playerSubtitle }}</p>
-        </div>
+        <h2 class="modal-title">{{ playerName }}</h2>
         <button type="button" class="close-button" @click="close">×</button>
       </header>
+      <p v-if="playerSubtitle" class="modal-subtitle">{{ playerSubtitle }}</p>
 
-      <section class="modal-body">
-        <div class="modal-summary-row">
-          <section class="modal-summary-card">
-            <header class="modal-summary-heading">Mercados</header>
-            <div v-if="marketColumns.length" class="summary-table-wrapper">
-              <table class="summary-table">
-                <thead>
-                  <tr>
-                    <th v-for="column in marketColumns" :key="`market-head-${column.key}`">
-                      {{ column.label }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td v-for="column in marketColumns" :key="`market-val-${column.key}`">
-                      <span class="market-value">{{ marketRow[column.key] ?? '-' }}</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p v-else class="modal-placeholder">Sin mercados activos.</p>
-          </section>
+      <!-- TOP ROW (como la imagen: izquierda DEFENSA, derecha MARKETS) -->
+      <section class="top-row">
+        <!-- IZQ: DEFENSA RIVAL -->
+        <div class="card">
+          <h3 class="card-title">Defensa Rival</h3>
 
-          <section class="modal-summary-card">
-            <header class="modal-summary-heading">Promedios L5</header>
-            <div v-if="recentAverages.length" class="summary-table-wrapper">
-              <table class="summary-table">
-                <thead>
-                  <tr>
-                    <th v-for="item in recentAverages" :key="`avg-head-${item.key}`">
-                      {{ item.label }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td v-for="item in recentAverages" :key="`avg-val-${item.key}`">
-                      {{ item.value }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+          <template v-if="opponentDefenseRows.length">
+            <!-- GRID de métricas como en el mock -->
+            <div class="defense-grid">
+              <div
+                v-for="row in opponentDefenseRows"
+                :key="row.key"
+                class="defense-col"
+              >
+                <div class="def-label">{{ row.label }}</div>
+
+                <div class="def-line">
+                  <span class="def-value">{{ row.value }}</span>
+                  <span class="def-rank">{{ row.rank }}</span>
+                </div>
+              </div>
             </div>
-            <p v-else class="modal-placeholder">Sin datos suficientes.</p>
-          </section>
+          </template>
+
+          <p v-else class="modal-state">Sin datos defensivos.</p>
         </div>
 
-        <h4 class="modal-section-title">Últimos Juegos</h4>
 
-        <div class="games-table-wrapper">
+        <!-- DER: MERCADO ACTUAL -->
+        <!-- <div class="card">
+          <h3 class="card-title">Mercado Actual</h3>
+          <div v-if="marketEntries.length" class="market-grid">
+            <article
+              v-for="entry in marketEntries"
+              :key="entry.key"
+              class="market-item"
+            >
+              <span class="market-label">{{ entry.label }}</span>
+              <span class="market-value">{{ entry.value }}</span>
+            </article>
+          </div>
+          <p v-else class="modal-state">Sin mercados activos.</p>
+        </div> -->
+        <div class="markets-card">
+          <h3 class="markets-title">MARKETS</h3>
+
+          <div class="markets-table-wrap">
+            <table class="markets-table">
+              <thead>
+                <tr>
+                  <th v-for="entry in marketEntries" :key="`head-${entry.key}`">
+                    {{ entry.label }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td
+                    v-for="entry in marketEntries"
+                    :key="`val-${entry.key}`"
+                    class="market-value-cell"
+                  >
+                    {{ entry.value }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ÚLTIMOS JUEGOS (abajo como en el mockup) -->
+      <section class="table-section stats-section">
+        <h3 class="card-title">Últimos Juegos</h3>
+        <div class="stats-table-wrapper">
           <div v-if="loading" class="modal-state">Cargando estadísticas...</div>
           <div v-else-if="error" class="modal-state error">{{ error }}</div>
+
           <template v-else>
-            <table v-if="performanceRows.length" class="games-table">
+            <table v-if="performanceRows.length" class="stats-table">
               <thead>
                 <tr>
                   <th>Fecha</th>
@@ -80,29 +103,32 @@
               </thead>
               <tbody>
                 <tr v-for="row in performanceRows" :key="row.id">
-                  <td>{{ row.date }}</td>
-                  <td>{{ row.opponent }}</td>
+                  <td class="game-cell">{{ row.date }}</td>
+                  <td class="game-cell">{{ row.opponent }}</td>
                   <td>{{ row.minutes }}</td>
                   <td
                     v-for="stat in STAT_TYPES"
                     :key="`metric-${row.id}-${stat}`"
-                    :class="['metric-cell', resolveMetricClass(stat, row.metrics[stat])]"
+                    :class="['value-cell', resolveMetricClass(stat, row.metrics[stat])]"
                   >
                     {{ row.metrics[stat]?.display ?? '-' }}
                   </td>
-                  <td>{{ row.fieldGoals }}</td>
-                  <td>{{ row.threePointers }}</td>
-                  <td>{{ row.freeThrows }}</td>
+                  <td class="value-cell neutral">{{ row.fieldGoals }}</td>
+                  <td class="value-cell neutral">{{ row.threePointers }}</td>
+                  <td class="value-cell neutral">{{ row.freeThrows }}</td>
                 </tr>
               </tbody>
             </table>
-            <p v-else class="modal-placeholder">Sin registros de juegos.</p>
+            <p v-else class="modal-state">Sin registros de juegos.</p>
           </template>
         </div>
       </section>
     </div>
   </div>
 </template>
+
+
+
 
 <script setup>
 import { computed, ref, watch } from 'vue';
@@ -157,6 +183,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  opponentDefense: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const emit = defineEmits(['close']);
@@ -198,23 +228,27 @@ const currentMarkets = computed(() => {
   return snapshot;
 });
 
-const marketColumns = computed(() =>
-  STAT_TYPES.map((key) => ({
-    key,
-    label: STAT_LABELS[key] ?? key.toUpperCase(),
-  }))
-);
-
-const marketRow = computed(() => {
-  const row = {};
-  STAT_TYPES.forEach((key) => {
+const marketEntries = computed(() =>
+  STAT_TYPES.map((key) => {
     const rawValue = props.market?.[key];
     const valueToUse =
       typeof rawValue === 'object' && rawValue !== null ? rawValue.value ?? rawValue.line : rawValue;
-    row[key] = formatNumericDisplay(parseNumeric(valueToUse));
-  });
-  return row;
-});
+    return {
+      key,
+      label: STAT_LABELS[key] ?? key.toUpperCase(),
+      value: formatNumericDisplay(parseNumeric(valueToUse)),
+    };
+  }).filter((entry) => entry.value !== '-')
+);
+
+const opponentDefenseRows = computed(() =>
+  toArray(props.opponentDefense).map((entry, index) => ({
+    key: entry.label ?? `def-${index}`,
+    label: (entry.label ?? 'STAT').toUpperCase(),
+    value: formatNumericDisplay(parseNumeric(entry.value)),
+    rank: entry.rank !== null && entry.rank !== undefined ? `#${entry.rank}` : '-',
+  }))
+);
 
 const resolvedStats = computed(() => {
   if (playerStats.value.length) return playerStats.value;
@@ -232,20 +266,6 @@ const performanceRows = computed(() =>
       return 0;
     })
 );
-
-const recentAverages = computed(() => {
-  if (!performanceRows.value.length) return [];
-  const window = performanceRows.value.slice(0, 5);
-  return STAT_TYPES.map((key) => {
-    const sum = window.reduce((acc, row) => acc + (row.metrics[key]?.value ?? 0), 0);
-    const avg = window.length ? sum / window.length : null;
-    return {
-      key,
-      label: STAT_LABELS[key] ?? key.toUpperCase(),
-      value: formatNumericDisplay(avg),
-    };
-  }).filter((item) => item.value !== '-');
-});
 
 watch(
   () => props.visible,
@@ -342,12 +362,12 @@ function buildMetric(value, market) {
   };
 }
 
-function resolveMetricClass(statKey, metric) {
-  if (!metric || metric.value === null || metric.value === undefined) return 'metric--neutral';
-  if (metric.market === null || metric.market === undefined) return 'metric--neutral';
-  if (metric.value > metric.market) return 'metric--positive';
-  if (metric.value < metric.market) return 'metric--negative';
-  return 'metric--neutral';
+function resolveMetricClass(_statKey, metric) {
+  if (!metric || metric.value === null || metric.value === undefined) return 'neutral';
+  if (metric.market === null || metric.market === undefined) return 'neutral';
+  if (metric.value > metric.market) return 'stat-over';
+  if (metric.value < metric.market) return 'stat-under';
+  return 'stat-equal';
 }
 
 function formatNumericDisplay(value) {
@@ -431,216 +451,308 @@ function formatCode(value) {
 </script>
 
 <style scoped>
+/* ====== base existentes ====== */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.82);
+  background-color: rgba(15, 23, 42, 0.8);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 75;
+  z-index: 70;
 }
-
 .modal-content {
-  background: #0a0e1a;
+  background: #0f172a;
   color: #e2e8f0;
   padding: 24px;
   border-radius: 12px;
   max-height: 85vh;
   overflow-y: auto;
-  width: 860px;
-  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.7);
+  min-width: 960px;
+  max-width: 1100px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.8);
 }
-
 .modal-header {
+  position: relative;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 20px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 8px;
 }
-
-.modal-header__title {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .modal-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #38bdf8;
-}
-
-.modal-subtitle {
-  margin: 0;
-  font-size: 13px;
-  color: #94a3b8;
   letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
 }
-
+.modal-subtitle {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+}
 .close-button {
+  position: absolute;
+  right: 0;
   background: transparent;
   border: none;
   color: #94a3b8;
-  font-size: 26px;
+  font-size: 24px;
   cursor: pointer;
   line-height: 1;
-  transition: color 0.2s ease;
 }
 
-.close-button:hover {
-  color: #f8fafc;
-}
-
-.modal-summary-row {
-  display: flex;
-  flex-wrap: wrap;
+/* ====== NUEVA ESTRUCTURA (mockup) ====== */
+.top-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
+  margin-bottom: 20px;
 }
-
-.modal-summary-card {
-  flex: 1 1 280px;
-  min-width: 260px;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(56, 189, 248, 0.12);
+.card {
+  background: rgba(17, 24, 39, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 12px;
   padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+}
+.card-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #38bdf8;
+  text-transform: uppercase;
 }
 
-.modal-summary-heading {
-  margin: 0;
-  font-size: 13px;
-  letter-spacing: 0.08em;
+/* bloque grande del ranking (como PASSING 200.2 #6) */
+.rank-box {
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 10px;
+  padding: 18px 16px;
+}
+.rank-metric {
   text-transform: uppercase;
+  font-size: 12px;
+  color: #cbd5f5;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+.rank-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.rank-value {
+  font-size: 20px;
+  font-weight: 800;
   color: #f8fafc;
+}
+.rank-hash {
+  font-size: 12px;
+  color: #cbd5f5;
+}
+
+/* markets a la derecha */
+.market-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.market-item {
+  background: rgba(30, 41, 59, 0.9);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.market-label {
+  font-size: 11px;
+  color: #cbd5f5;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.market-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+/* tabla de abajo */
+.table-section {
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  padding-top: 16px;
+}
+.stats-table-wrapper { overflow-x: auto; }
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 720px;
+}
+.stats-table thead {
+  background: rgba(30, 41, 59, 0.8);
+}
+th, td {
+  border: 1px solid rgba(71, 85, 105, 0.4);
+  padding: 6px;
+  text-align: center;
+}
+.value-cell { font-weight: 600; }
+.value-cell.stat-over { color: #22c55e; }
+.value-cell.stat-under { color: #ef4444; }
+.value-cell.stat-equal { color: #facc15; }
+.value-cell.neutral { color: #cbd5f5; }
+.modal-state {
+  padding: 16px;
+  text-align: center;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 8px;
+}
+.modal-state.error { color: #ef4444; }
+.game-cell { font-weight: 600; }
+
+.mt-12 { margin-top: 12px; }
+
+@media (max-width: 1024px) {
+  .modal-content { min-width: auto; width: 95vw; }
+  .top-row { grid-template-columns: 1fr; }
+}
+
+/* --- Card y título --- */
+.markets-card {
+  background: rgba(17, 24, 39, 0.9);            /* fondo del card */
+  border: 1px solid rgba(148, 163, 184, 0.12);  /* borde tenue */
+  border-radius: 12px;
+  padding: 12px 12px 6px;
+}
+
+.markets-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: #38bdf8;             /* cian del mock */
+  text-transform: uppercase;
   text-align: center;
 }
 
-.summary-table-wrapper {
+/* --- Tabla --- */
+.markets-table-wrap {
   overflow-x: auto;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.6); /* panel interno oscuro */
+  border: 1px solid rgba(148, 163, 184, 0.1);
 }
 
-.summary-table {
+.markets-table {
   width: 100%;
   border-collapse: collapse;
-  background: rgba(10, 19, 40, 0.6);
-  border-radius: 10px;
   table-layout: fixed;
 }
 
-.summary-table th,
-.summary-table td {
-  padding: 8px;
-  text-align: center;
-  font-size: 13px;
+.markets-table thead th {
+  background: rgba(30, 41, 59, 0.9);   /* banda superior como el mock */
   color: #cbd5f5;
-  border: 1px solid rgba(56, 189, 248, 0.08);
+  font-size: 12px;
+  text-transform: uppercase;
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  text-align: center;
 }
 
-.market-value {
-  font-weight: 600;
+.markets-table tbody td {
+  padding: 12px 8px;
+  text-align: center;
+  border-top: 1px solid rgba(148, 163, 184, 0.06);
+}
+
+/* valor en amarillo, más grueso */
+.market-value-cell {
   color: #facc15;
-}
-
-.modal-placeholder {
-  margin: 0;
-  font-size: 13px;
-  color: #94a3b8;
-  text-align: center;
-}
-
-.modal-section-title {
-  margin: 24px 0 12px;
+  font-weight: 700;
   font-size: 14px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #f8fafc;
 }
 
-.games-table-wrapper {
-  overflow-x: auto;
+/* bordes suaves alrededor de todo el módulo (look del mock) */
+.markets-card,
+.markets-table-wrap {
+  box-shadow: inset 0 0 0 1px rgba(2, 6, 23, 0.2);
 }
 
-.games-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 720px;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(56, 189, 248, 0.12);
-  border-radius: 12px;
-  font-size: 13px;
+/* Responsivo: columnas estrechas mantienen legibilidad */
+@media (max-width: 480px) {
+  .markets-table thead th,
+  .markets-table tbody td {
+    font-size: 11px;
+    padding: 10px 6px;
+  }
 }
 
-.games-table thead {
-  background: rgba(15, 23, 42, 0.7);
+/* Contenedor en columnas (3 en desktop, responsive) */
+.defense-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0; /* el mock no muestra separación visible entre columnas */
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.10);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
-.games-table th,
-.games-table td {
-  padding: 10px;
-  text-align: center;
-  border: 1px solid rgba(56, 189, 248, 0.08);
-  color: #e2e8f0;
+/* Cada “columna” */
+.defense-col {
+  padding: 12px 16px;
+  border-right: 1px solid rgba(148, 163, 184, 0.08);
+}
+.defense-col:last-child {
+  border-right: 0;
 }
 
-.games-table th {
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 600;
-  color: #9ca3af;
-}
-
-.games-table td:first-child,
-.games-table td:nth-child(2) {
-  font-weight: 600;
-  color: #f8fafc;
-}
-
-.metric-cell {
-  font-weight: 600;
-}
-
-.metric--positive {
-  color: #16a34a;
-}
-
-.metric--negative {
-  color: #ef4444;
-}
-
-.metric--neutral {
-  color: #e2e8f0;
-}
-
-.modal-state {
-  padding: 24px;
-  background: rgba(15, 23, 42, 0.4);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 12px;
-  text-align: center;
-  font-size: 14px;
+/* Encabezado de cada columna (LABEL) */
+.def-label {
+  background: rgba(30, 41, 59, 0.9);
   color: #cbd5f5;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: .08em;
+  font-weight: 700;
+  padding: 10px 12px;
+  margin: -12px -16px 10px;  /* ocupa todo el ancho de la columna */
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  text-align: center;
 }
 
-.modal-state.error {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.4);
+/* Línea con valor a la izquierda y #rank a la derecha (en la misma fila) */
+.def-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  padding: 2px 0 4px;
 }
 
-@media (max-width: 768px) {
-  .modal-content {
-    width: 95vw;
-    padding: 20px;
-  }
-
-  .modal-summary-row {
-    flex-direction: column;
-  }
+.def-value {
+  color: #f8fafc;
+  font-weight: 700;
+  font-size: 14px;    /* súbelo a 18–20 si quieres más presencia */
 }
+
+.def-rank {
+  color: #60a5fa;       /* azul “link” del mock */
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Responsive: 2 columnas en tablets, 1 en móviles */
+@media (max-width: 900px) {
+  .defense-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .defense-grid { grid-template-columns: 1fr; }
+}
+
+
 </style>
