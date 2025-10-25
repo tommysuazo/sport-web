@@ -1,7 +1,10 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { ref, watch } from 'vue';
 import axios from 'axios';
+import { useRoute } from 'vue-router';
 
+import NbaTeamStatsModal from '../components/NbaTeamStatsModal.vue';
+import NbaPlayerStatsModal from '../components/NbaPlayerStatsModal.vue';
 import PickList from '../components/PickList.vue';
 import { buildNbaApiUrl } from '../utils/nbaApi';
 
@@ -12,12 +15,39 @@ const errorMessage = ref('');
 
 const pickList = ref([]);
 const isPickListOpen = ref(false);
+const playerModalState = ref({
+  visible: false,
+  playerId: null,
+  teamId: null,
+  teamCode: '',
+  opponentCode: '',
+  playerName: '',
+  playerPosition: '',
+  market: {},
+  initialStats: [],
+});
+const teamModalState = ref({
+  visible: false,
+  teamId: null,
+  teamName: '',
+  markets: [],
+});
 
 const MATCHUPS_URL = buildNbaApiUrl('markets/matchups');
 const MARKETS_URL = buildNbaApiUrl('markets');
 const TEAM_AVERAGES_URL = buildNbaApiUrl('teams/stats/averages');
 const TEAM_PERFORMANCE_URL = buildNbaApiUrl('teams/stats/recent-performance');
 const LINEUPS_URL = buildNbaApiUrl('games/lineups');
+
+const route = useRoute();
+
+watch(
+  () => route.query?.date ?? null,
+  (newDateParam) => {
+    void loadMatchups(newDateParam);
+  },
+  { immediate: true }
+);
 
 const OFFENSE_RANK_DEFS = [
   { label: 'Points', key: 'points' },
@@ -45,13 +75,14 @@ const PLAYER_COLUMNS = [
   { key: 'pra', label: 'PRA', statKey: 'pra' },
 ];
 
-onMounted(() => {
-  loadMatchups();
-});
-
-async function loadMatchups() {
+async function loadMatchups(dateParam = null) {
   loading.value = true;
   errorMessage.value = '';
+  const resolvedDate =
+    typeof dateParam === 'string' && dateParam.trim().length ? dateParam.trim() : null;
+  const dateConfig = resolvedDate ? { params: { date: resolvedDate } } : undefined;
+  const shouldIncludeLineups = !resolvedDate;
+
   try {
     const [
       matchupsResponse,
@@ -59,8 +90,8 @@ async function loadMatchups() {
       averagesResponse,
       performanceResponse,
     ] = await Promise.all([
-      axios.get(MATCHUPS_URL),
-      axios.get(MARKETS_URL),
+      axios.get(MATCHUPS_URL, dateConfig),
+      axios.get(MARKETS_URL, dateConfig),
       axios.get(TEAM_AVERAGES_URL),
       axios.get(TEAM_PERFORMANCE_URL),
     ]);
@@ -70,17 +101,19 @@ async function loadMatchups() {
     const teamAverages = extractTeamAverages(averagesResponse.data ?? averagesResponse);
     const teamPerformance = extractRecentPerformance(performanceResponse.data ?? performanceResponse);
     let lineupGames = null;
-    try {
-      const lineupsResponse = await axios.get(LINEUPS_URL);
-      lineupGames = extractLineupGames(lineupsResponse.data ?? lineupsResponse);
-    } catch (lineupsError) {
-      console.warn('Lineups request failed, falling back to default player rendering', lineupsError);
+    if (shouldIncludeLineups) {
+      try {
+        const lineupsResponse = await axios.get(LINEUPS_URL);
+        lineupGames = extractLineupGames(lineupsResponse.data ?? lineupsResponse);
+      } catch (lineupsError) {
+        console.warn('Lineups request failed, falling back to default player rendering', lineupsError);
+      }
     }
 
     const marketsMap = buildMarketsMap(rawMarkets);
     const averagesMap = buildTeamAverageMap(teamAverages);
     const performanceMap = buildPerformanceMap(teamPerformance);
-    const lineupsMap = buildLineupsMap(lineupGames ?? []);
+    const lineupsMap = shouldIncludeLineups ? buildLineupsMap(lineupGames ?? []) : new Map();
 
     matchups.value = rawMatchups.map((rawMatchup) =>
       enrichMatchup(rawMatchup, marketsMap, averagesMap, performanceMap, lineupsMap)
@@ -153,6 +186,7 @@ function buildTeam(teamPayload = {}, marketEntry, averagesMap, performanceMap, o
     markets: buildTeamMarkets(teamId, marketEntry),
     offenseRanks: buildRankList(teamId, OFFENSE_RANK_DEFS, averagesMap, 'ofensive'),
     opponentDefenseRanks: buildRankList(opponentId, DEFENSE_RANK_DEFS, averagesMap, 'defensive'),
+    opponentCode: resolveTeamCode(opponentPayload),
     playerSections: sections,
     playerSectionsLayout: layout,
     injuries,
@@ -254,7 +288,7 @@ function buildRankList(teamId, defs, averagesMap, branchKey) {
       const metric = branch?.[definition.key];
       if (!metric || (metric.value === null && metric.rank === null)) return null;
       return {
-        label: definition.label,
+        label: String(definition.label ?? '').toUpperCase() || 'STAT',
         value: metric.value,
         rank: metric.rank,
       };
@@ -323,6 +357,7 @@ function buildPlayerSections(teamPayload, marketEntry, lineupInfo) {
     if (!section) return;
 
     const metrics = {};
+    const marketSnapshot = {};
     PLAYER_COLUMNS.forEach((column) => {
       if (!column.statKey) return;
       const rawValue = market[column.statKey];
@@ -333,15 +368,23 @@ function buildPlayerSections(teamPayload, marketEntry, lineupInfo) {
         statKey: column.statKey,
         lastFive: computeLastFive(playerStats, column.statKey, numericValue),
       };
+      if (numericValue !== null) {
+        marketSnapshot[column.statKey] = numericValue;
+      }
     });
 
     const fullName = resolvePlayerName(playerInfo);
     const displayName = resolvePlayerDisplayName(playerInfo);
+    const position = resolvePlayerPosition(playerInfo);
     section.rows.push({
       id: playerId,
       name: displayName,
       fullName,
       teamId: normalizeId(playerInfo.team_id ?? teamPayload.id),
+      position,
+      stats: playerStats,
+      market: marketSnapshot,
+      rawMarket: market,
       metrics,
     });
   });
@@ -815,6 +858,17 @@ function resolvePlayerName(player = {}) {
   return player.id ? `Player ${player.id}` : 'Player';
 }
 
+function resolvePlayerPosition(player = {}) {
+  const position =
+    player.position ??
+    player.primary_position ??
+    player.pos ??
+    player.role ??
+    player.depth_chart_position ??
+    '';
+  return position ? String(position).toUpperCase() : '';
+}
+
 function resolvePlayerDisplayName(player = {}) {
   const first = String(player.first_name ?? player.firstName ?? '').trim();
   const last = String(player.last_name ?? player.lastName ?? '').trim();
@@ -1055,7 +1109,67 @@ function handlePickEntryRemove(entry) {
 }
 
 function handlePickEntrySelect() {
-  // No modal interaction for NBA yet; keep picker responsive.
+  // Placeholder for future interactions when selecting a pick list entry.
+}
+
+function openTeamModal(team) {
+  const teamId = normalizeId(team?.id);
+  if (!teamId) return;
+  const primary = Array.isArray(team?.markets?.primary) ? team.markets.primary : [];
+  const secondary = Array.isArray(team?.markets?.secondary) ? team.markets.secondary : [];
+  teamModalState.value = {
+    visible: true,
+    teamId,
+    teamName: team?.name ?? '',
+    markets: [...primary, ...secondary],
+  };
+}
+
+function closeTeamModal() {
+  teamModalState.value = {
+    visible: false,
+    teamId: null,
+    teamName: '',
+    markets: [],
+  };
+}
+
+function openPlayerModal(teamContext, playerRow) {
+  if (!playerRow?.id) return;
+  const playerId = normalizeId(playerRow.id);
+  if (!playerId) return;
+
+  const teamId = normalizeId(playerRow.teamId ?? teamContext?.id);
+  const baselineStats = Array.isArray(playerRow.stats) ? playerRow.stats : [];
+  const teamCode = resolveTeamCode(teamContext);
+  const opponentCode = teamContext?.opponentCode ?? '';
+  const marketSnapshot = playerRow.market ?? {};
+
+  playerModalState.value = {
+    visible: true,
+    playerId,
+    teamId,
+    teamCode,
+    opponentCode,
+    playerName: playerRow.fullName ?? playerRow.name ?? `Jugador ${playerId}`,
+    playerPosition: playerRow.position ?? '',
+    market: marketSnapshot,
+    initialStats: baselineStats,
+  };
+}
+
+function closePlayerModal() {
+  playerModalState.value = {
+    visible: false,
+    playerId: null,
+    teamId: null,
+    teamCode: '',
+    opponentCode: '',
+    playerName: '',
+    playerPosition: '',
+    market: {},
+    initialStats: [],
+  };
 }
 </script>
 
@@ -1072,8 +1186,10 @@ function handlePickEntrySelect() {
     <section v-else-if="isLoaded && matchups.length" class="matchups-grid">
       <article v-for="matchup in matchups" :key="matchup.id" class="matchup-card">
         <header class="matchup-header">
-          <h2 class="matchup-code">{{ matchup.awayTeam.code }} VS {{ matchup.homeTeam.code }}</h2>
-          <span class="matchup-date">{{ matchup.displayDate }}</span>
+          <h2 class="matchup-code">
+            {{ matchup.awayTeam.code }} VS {{ matchup.homeTeam.code }}
+          </h2>
+          <p class="matchup-date">{{ matchup.displayDate }}</p>
         </header>
 
         <div class="teams-wrapper">
@@ -1107,7 +1223,11 @@ function handlePickEntrySelect() {
             <div class="team-section">
               <h3>Markets</h3>
               <div v-if="team.markets.primary.length || team.markets.secondary.length" class="market-block">
-                <div v-if="team.markets.primary.length" class="market-table-wrapper team-market-trigger">
+                <div
+                  v-if="team.markets.primary.length"
+                  class="market-table-wrapper team-market-trigger"
+                  @click="openTeamModal(team)"
+                >
                   <table class="market-table">
                     <thead>
                       <tr>
@@ -1130,7 +1250,11 @@ function handlePickEntrySelect() {
                   </table>
                 </div>
 
-                <div v-if="team.markets.secondary.length" class="market-table-wrapper team-market-trigger">
+                <div
+                  v-if="team.markets.secondary.length"
+                  class="market-table-wrapper team-market-trigger"
+                  @click="openTeamModal(team)"
+                >
                   <table class="market-table market-table--secondary">
                     <thead>
                       <tr>
@@ -1233,6 +1357,7 @@ function handlePickEntrySelect() {
                         v-for="row in section.rows"
                         :key="`row-${section.key}-${row.id}`"
                         class="player-row"
+                        @click="openPlayerModal(team, row)"
                       >
                         <td v-for="column in section.columns" :key="`cell-${section.key}-${row.id}-${column.key}`">
                           <template v-if="column.key === 'name'">
@@ -1288,6 +1413,33 @@ function handlePickEntrySelect() {
       @select="handlePickEntrySelect"
       @remove="handlePickEntryRemove"
     />
+
+    <transition name="modal-fade">
+      <NbaPlayerStatsModal
+        v-if="playerModalState.visible"
+        :visible="playerModalState.visible"
+        :player-id="playerModalState.playerId"
+        :team-id="playerModalState.teamId"
+        :team-code="playerModalState.teamCode"
+        :opponent-code="playerModalState.opponentCode"
+        :player-name="playerModalState.playerName"
+        :player-position="playerModalState.playerPosition"
+        :market="playerModalState.market"
+        :initial-stats="playerModalState.initialStats"
+        @close="closePlayerModal"
+      />
+    </transition>
+
+    <transition name="modal-fade">
+      <NbaTeamStatsModal
+        v-if="teamModalState.visible"
+        :visible="teamModalState.visible"
+        :team-id="teamModalState.teamId"
+        :team-name="teamModalState.teamName"
+        :markets="teamModalState.markets"
+        @close="closeTeamModal"
+      />
+    </transition>
   </div>
 </template>
 
@@ -1374,6 +1526,7 @@ function handlePickEntrySelect() {
 }
 
 .matchup-date {
+  margin: 0;
   font-size: 14px;
   color: #94a3b8;
 }
@@ -1415,6 +1568,7 @@ function handlePickEntrySelect() {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  margin-top: 20px;
 }
 
 .team-summary-table {
@@ -1471,6 +1625,7 @@ function handlePickEntrySelect() {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: #f8fafc;
+  text-align: center;
 }
 
 .market-block {
@@ -1578,7 +1733,7 @@ function handlePickEntrySelect() {
   display: block;
   margin-top: 4px;
   font-size: 11px;
-  color: #38bdf8;
+  color: #60a5fa;
 }
 
 .player-sections {
@@ -1638,6 +1793,10 @@ function handlePickEntrySelect() {
   width: calc((100% - 36%) / 5);
 }
 
+.player-row {
+  cursor: pointer;
+}
+
 .player-row:nth-child(odd) {
   background: rgba(15, 23, 42, 0.35);
 }
@@ -1649,6 +1808,16 @@ function handlePickEntrySelect() {
 .player-name {
   font-weight: 600;
   color: #e0f2fe;
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
 }
 
 .stat-cell {
