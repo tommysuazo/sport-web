@@ -1,110 +1,93 @@
 <template>
   <div class="modal-backdrop" @click.self="close">
-    <div class="modal-content">
-      <!-- HEADER -->
-      <header class="modal-header">
-        <h2 class="modal-title">{{ playerName }}</h2>
-        <button type="button" class="close-button" @click="close">×</button>
+    <div class="modal-content player-modal">
+      <header class="player-modal-header">
+        <div class="player-modal-heading">
+          <h3 class="player-modal-title">{{ playerName }}</h3>
+          <p v-if="playerSubtitle" class="player-modal-subtitle">{{ playerSubtitle }}</p>
+        </div>
+        <button type="button" class="modal-close-button" @click="close">×</button>
       </header>
-      <p v-if="playerSubtitle" class="modal-subtitle">{{ playerSubtitle }}</p>
 
-      <!-- TOP ROW (como la imagen: izquierda DEFENSA, derecha MARKETS) -->
-      <section class="top-row">
-        <!-- IZQ: DEFENSA RIVAL -->
-        <div class="card">
-          <h3 class="card-title">Defensa Rival</h3>
-
-          <template v-if="opponentDefenseRows.length">
-            <!-- GRID de métricas como en el mock -->
-            <div class="defense-grid">
-              <div
-                v-for="row in opponentDefenseRows"
-                :key="row.key"
-                class="defense-col"
-              >
-                <div class="def-label">{{ row.label }}</div>
-
-                <div class="def-line">
-                  <span class="def-value">{{ row.value }}</span>
-                  <span class="def-rank">{{ row.rank }}</span>
-                </div>
-              </div>
+      <section class="player-modal-body">
+        <div class="modal-summary-row">
+          <section class="modal-summary-card">
+            <header class="modal-summary-title">{{ defenseTitle }}</header>
+            <div v-if="defenseStats.length" class="modal-summary-table-wrapper market-table-wrapper">
+              <table class="modal-summary-table market-table rank-table">
+                <thead>
+                  <tr>
+                    <th v-for="stat in defenseStats" :key="`def-head-${stat.label}`">
+                      {{ stat.label }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td v-for="stat in defenseStats" :key="`def-val-${stat.label}`">
+                      <span class="rank-value">{{ stat.value }}</span>
+                      <span v-if="stat.rank" class="rank-meta">#{{ stat.rank }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </template>
+            <p v-else class="modal-placeholder">Sin datos defensivos.</p>
+          </section>
 
-          <p v-else class="modal-state">Sin datos defensivos.</p>
+          <section class="modal-summary-card">
+            <header class="modal-summary-title">Mercados</header>
+            <div v-if="marketColumns.length" class="modal-summary-table-wrapper market-table-wrapper">
+              <table class="modal-summary-table market-table">
+                <thead>
+                  <tr>
+                    <th v-for="column in marketColumns" :key="`market-head-${column.key}`">
+                      {{ column.label }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td v-for="column in marketColumns" :key="`market-val-${column.key}`">
+                      <span class="market-value">{{ marketRow[column.key] ?? '-' }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="modal-placeholder">Sin mercados activos.</p>
+          </section>
         </div>
 
+        <h4 class="modal-section-title">{{ sectionTitle }}</h4>
 
-        <!-- DER: MERCADO ACTUAL -->
-        <!-- <div class="card">
-          <h3 class="card-title">Mercado Actual</h3>
-          <div v-if="marketEntries.length" class="market-grid">
-            <article
-              v-for="entry in marketEntries"
-              :key="entry.key"
-              class="market-item"
-            >
-              <span class="market-label">{{ entry.label }}</span>
-              <span class="market-value">{{ entry.value }}</span>
-            </article>
-          </div>
-          <p v-else class="modal-state">Sin mercados activos.</p>
-        </div> -->
-        <div class="markets-card">
-          <h3 class="markets-title">MARKETS</h3>
-
-          <div class="markets-table-wrap">
-            <table class="markets-table">
-              <thead>
-                <tr>
-                  <th v-for="entry in marketEntries" :key="`head-${entry.key}`">
-                    {{ entry.label }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td
-                    v-for="entry in marketEntries"
-                    :key="`val-${entry.key}`"
-                    class="market-value-cell"
-                  >
-                    {{ entry.value }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- ÚLTIMOS JUEGOS (abajo como en el mockup) -->
-      <section class="table-section stats-section">
-        <h3 class="card-title">Últimos Juegos</h3>
-        <div class="stats-table-wrapper">
+        <div class="modal-stats-table-wrapper games-table-wrapper">
           <div v-if="loading" class="modal-state">Cargando estadísticas...</div>
           <div v-else-if="error" class="modal-state error">{{ error }}</div>
-
           <template v-else>
-            <table v-if="performanceRows.length" class="stats-table">
+            <table v-if="performanceRows.length" class="modal-stats-table games-table">
               <thead>
                 <tr>
-                  <th>Fecha</th>
-                  <th>Rival</th>
-                  <th>Min</th>
+                  <th>DATE</th>
+                  <th>VS</th>
+                  <th>MIN</th>
                   <th v-for="stat in STAT_TYPES" :key="`stat-head-${stat}`">
                     {{ STAT_LABELS[stat] }}
                   </th>
                   <th>FG</th>
-                  <th>3P</th>
                   <th>FT</th>
+                  <th>FOULS</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in performanceRows" :key="row.id">
-                  <td class="game-cell">{{ row.date }}</td>
-                  <td class="game-cell">{{ row.opponent }}</td>
+                <tr
+                  v-for="row in performanceRows"
+                  :key="row.id"
+                  :class="['game-row', { 'game-row--active': row.id === selectedGameId }]"
+                  @click="selectGame(row.id)"
+                >
+                  <td>{{ row.date }}</td>
+                  <td>{{ row.versus }}</td>
                   <td>{{ row.minutes }}</td>
                   <td
                     v-for="stat in STAT_TYPES"
@@ -113,13 +96,49 @@
                   >
                     {{ row.metrics[stat]?.display ?? '-' }}
                   </td>
-                  <td class="value-cell neutral">{{ row.fieldGoals }}</td>
-                  <td class="value-cell neutral">{{ row.threePointers }}</td>
-                  <td class="value-cell neutral">{{ row.freeThrows }}</td>
+                  <td class="value-cell stat-neutral-text">{{ row.fieldGoals }}</td>
+                  <td class="value-cell stat-neutral-text">{{ row.freeThrows }}</td>
+                  <td class="value-cell stat-neutral-text">{{ row.fouls }}</td>
                 </tr>
               </tbody>
             </table>
-            <p v-else class="modal-state">Sin registros de juegos.</p>
+            <p v-else class="modal-placeholder">Sin registros de juegos.</p>
+            <section v-if="selectedGameDetails" class="game-details-card">
+              <header class="game-details-header">
+                <div class="game-details-meta">
+                  <p class="game-details-date">{{ selectedGameDetails.date }}</p>
+                  <p class="game-details-matchup">
+                    {{ selectedGameDetails.teamLabel }}
+                    <span class="game-details-score" v-if="selectedGameDetails.score">
+                      {{ selectedGameDetails.score }}
+                    </span>
+                    vs
+                    {{ selectedGameDetails.opponentLabel }}
+                  </p>
+                  <p class="game-details-minutes">MIN {{ selectedGameDetails.minutes }}</p>
+                </div>
+              </header>
+              <div class="game-details-grid">
+                <div
+                  v-for="stat in selectedGameDetails.primaryStats"
+                  :key="`detail-${stat.label}`"
+                  class="game-details-item"
+                >
+                  <p class="game-details-label">{{ stat.label }}</p>
+                  <p class="game-details-value">{{ stat.value }}</p>
+                </div>
+              </div>
+              <div class="game-details-grid secondary">
+                <div
+                  v-for="stat in selectedGameDetails.secondaryStats"
+                  :key="`secondary-${stat.label}`"
+                  class="game-details-item"
+                >
+                  <p class="game-details-label">{{ stat.label }}</p>
+                  <p class="game-details-value">{{ stat.value }}</p>
+                </div>
+              </div>
+            </section>
           </template>
         </div>
       </section>
@@ -136,14 +155,14 @@ import axios from 'axios';
 
 import { buildNbaApiUrl } from '../utils/nbaApi';
 
-const STAT_TYPES = ['points', 'rebounds', 'assists', 'pt3', 'pra'];
+const STAT_TYPES = ['points', 'rebounds', 'assists', 'pra', 'pt3'];
 
 const STAT_LABELS = {
   points: 'PTS',
   rebounds: 'REB',
   assists: 'AST',
-  pt3: '3PT',
   pra: 'PRA',
+  pt3: 'PT3',
 };
 
 const props = defineProps({
@@ -194,6 +213,7 @@ const emit = defineEmits(['close']);
 const playerStats = ref([]);
 const loading = ref(false);
 const error = ref('');
+const selectedGameId = ref(null);
 
 const normalizedPlayerId = computed(() => normalizeId(props.playerId));
 
@@ -228,27 +248,41 @@ const currentMarkets = computed(() => {
   return snapshot;
 });
 
-const marketEntries = computed(() =>
-  STAT_TYPES.map((key) => {
+const defenseTitle = computed(() => {
+  const code = (props.opponentCode ?? '').toString().trim().toUpperCase();
+  return code ? `${code} Defensive Ranks` : 'Defensive Ranks';
+});
+
+const defenseStats = computed(() =>
+  toArray(props.opponentDefense)
+    .map((entry, index) => ({
+      key: entry.label ?? `def-${index}`,
+      label: (entry.label ?? 'STAT').toUpperCase(),
+      value: formatNumericDisplay(parseNumeric(entry.value)),
+      rank: entry.rank ?? null,
+    }))
+    .filter((entry) => entry.value !== '-')
+);
+
+const marketColumns = computed(() =>
+  STAT_TYPES.map((key) => ({
+    key,
+    label: STAT_LABELS[key] ?? key.toUpperCase(),
+  }))
+);
+
+const marketRow = computed(() => {
+  const row = {};
+  STAT_TYPES.forEach((key) => {
     const rawValue = props.market?.[key];
     const valueToUse =
       typeof rawValue === 'object' && rawValue !== null ? rawValue.value ?? rawValue.line : rawValue;
-    return {
-      key,
-      label: STAT_LABELS[key] ?? key.toUpperCase(),
-      value: formatNumericDisplay(parseNumeric(valueToUse)),
-    };
-  }).filter((entry) => entry.value !== '-')
-);
+    row[key] = formatNumericDisplay(parseNumeric(valueToUse));
+  });
+  return row;
+});
 
-const opponentDefenseRows = computed(() =>
-  toArray(props.opponentDefense).map((entry, index) => ({
-    key: entry.label ?? `def-${index}`,
-    label: (entry.label ?? 'STAT').toUpperCase(),
-    value: formatNumericDisplay(parseNumeric(entry.value)),
-    rank: entry.rank !== null && entry.rank !== undefined ? `#${entry.rank}` : '-',
-  }))
-);
+const sectionTitle = computed(() => 'Last 16 games');
 
 const resolvedStats = computed(() => {
   if (playerStats.value.length) return playerStats.value;
@@ -267,11 +301,18 @@ const performanceRows = computed(() =>
     })
 );
 
+const selectedGameDetails = computed(() => {
+  if (!selectedGameId.value) return null;
+  return performanceRows.value.find((row) => row.id === selectedGameId.value)?.details ?? null;
+});
+
 watch(
   () => props.visible,
   (isVisible) => {
     if (isVisible) {
       loadPlayerStats(true);
+    } else {
+      selectedGameId.value = null;
     }
   }
 );
@@ -285,6 +326,16 @@ watch(
       playerStats.value = [];
       loading.value = false;
       error.value = '';
+      selectedGameId.value = null;
+    }
+  }
+);
+
+watch(
+  () => performanceRows.value,
+  () => {
+    if (!performanceRows.value.some((row) => row.id === selectedGameId.value)) {
+      selectedGameId.value = null;
     }
   }
 );
@@ -304,6 +355,9 @@ async function loadPlayerStats(force = false) {
     error.value = 'No se pudieron cargar las estadísticas del jugador.';
   } finally {
     loading.value = false;
+    if (!playerStats.value.some((entry) => entry?.id === selectedGameId.value)) {
+      selectedGameId.value = null;
+    }
   }
 }
 
@@ -314,7 +368,16 @@ function transformStatEntry(entry, markets) {
 
   const opponentTeam = isAway ? game.home_team ?? {} : game.away_team ?? {};
   const opponentCode = formatCode(opponentTeam.short_name ?? opponentTeam.code ?? opponentTeam.name);
-  const opponentLabel = opponentCode ? `${isAway ? '@' : 'vs'} ${opponentCode}` : '-';
+  const opponentLabel = opponentCode ? (isAway ? `@${opponentCode}` : opponentCode) : '-';
+
+  const playerTeam = isAway ? game.away_team ?? {} : game.home_team ?? {};
+  const playerTeamCode = formatCode(playerTeam.short_name ?? playerTeam.code ?? playerTeam.name);
+  const teamTotals = findTeamTotals(game, entry.team_id, true);
+  const opponentTotals = findTeamTotals(game, entry.team_id, false);
+  const score =
+    teamTotals.points !== null && opponentTotals.points !== null
+      ? `${formatNumericDisplay(teamTotals.points)}-${formatNumericDisplay(opponentTotals.points)}`
+      : null;
 
   const timestamp = readTimestamp(game.start_at ?? entry.updated_at ?? entry.created_at);
   const date = formatShortDate(game.start_at ?? entry.updated_at ?? entry.created_at);
@@ -325,6 +388,7 @@ function transformStatEntry(entry, markets) {
   const assists = parseNumeric(entry.assists);
   const threesMade = parseNumeric(entry.three_pointers_made);
   const pra = safeSum(points, rebounds, assists);
+  const fouls = parseNumeric(entry.fouls);
 
   const metrics = {
     points: buildMetric(points, markets.points),
@@ -337,18 +401,54 @@ function transformStatEntry(entry, markets) {
   const fieldGoals = formatAttemptLine(entry.field_goals_made, entry.field_goals_attempted);
   const threePointers = formatAttemptLine(entry.three_pointers_made, entry.three_pointers_attempted);
   const freeThrows = formatAttemptLine(entry.free_throws_made, entry.free_throws_attempted);
+  if (threePointers !== '-') {
+    metrics.pt3.display = threePointers;
+  }
+
+  const details = {
+    date,
+    teamLabel: playerTeamCode || 'TEAM',
+    opponentLabel: opponentCode || '-',
+    minutes: minutes === '-' ? '--' : minutes,
+    score,
+    primaryStats: [
+      { label: 'PTS', value: formatNumericDisplay(points) },
+      { label: 'REB', value: formatNumericDisplay(rebounds) },
+      { label: 'AST', value: formatNumericDisplay(assists) },
+      { label: 'PRA', value: formatNumericDisplay(pra) },
+      { label: 'PT3', value: metrics.pt3.display },
+      { label: 'FOULS', value: formatNumericDisplay(fouls) },
+    ],
+    secondaryStats: [
+      { label: 'STL', value: formatNumericDisplay(parseNumeric(entry.steals)) },
+      { label: 'BLK', value: formatNumericDisplay(parseNumeric(entry.blocks)) },
+      { label: 'TOV', value: formatNumericDisplay(parseNumeric(entry.turnovers)) },
+      { label: 'FG', value: fieldGoals },
+      { label: '3P', value: threePointers },
+      { label: 'FT', value: freeThrows },
+    ],
+  };
 
   return {
     id: entry.id ?? entry.game_id ?? `${opponentLabel}-${timestamp ?? Math.random()}`,
-    opponent: opponentLabel,
+    versus: opponentLabel,
     date,
     minutes,
     metrics,
     fieldGoals,
-    threePointers,
     freeThrows,
+    fouls: formatNumericDisplay(fouls),
     timestamp,
+    details,
   };
+}
+
+function selectGame(id) {
+  if (selectedGameId.value === id) {
+    selectedGameId.value = null;
+  } else {
+    selectedGameId.value = id;
+  }
 }
 
 function buildMetric(value, market) {
@@ -363,17 +463,29 @@ function buildMetric(value, market) {
 }
 
 function resolveMetricClass(_statKey, metric) {
-  if (!metric || metric.value === null || metric.value === undefined) return 'neutral';
-  if (metric.market === null || metric.market === undefined) return 'neutral';
-  if (metric.value > metric.market) return 'stat-over';
-  if (metric.value < metric.market) return 'stat-under';
-  return 'stat-equal';
+  if (!metric || metric.value === null || metric.value === undefined) return 'stat-neutral-text';
+  if (metric.market === null || metric.market === undefined) return 'stat-neutral-text';
+  if (metric.value > metric.market) return 'stat-hit-text';
+  if (metric.value < metric.market) return 'stat-miss-text';
+  return 'stat-push-text';
 }
 
 function formatNumericDisplay(value) {
   if (value === null || value === undefined) return '-';
   if (!Number.isFinite(value)) return String(value);
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function findTeamTotals(game, playerTeamId, sameTeam) {
+  const totals = Array.isArray(game.stats) ? game.stats : [];
+  const normalizedPlayerTeam = normalizeId(playerTeamId);
+  const entry = totals.find((teamStat) => {
+    const normalizedTeamId = normalizeId(teamStat?.team_id);
+    return sameTeam ? normalizedTeamId === normalizedPlayerTeam : normalizedTeamId !== normalizedPlayerTeam;
+  });
+  return {
+    points: parseNumeric(entry?.points),
+  };
 }
 
 function formatMinutes(value) {
@@ -451,7 +563,6 @@ function formatCode(value) {
 </script>
 
 <style scoped>
-/* ====== base existentes ====== */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -461,39 +572,55 @@ function formatCode(value) {
   align-items: center;
   z-index: 70;
 }
+
 .modal-content {
-  background: #0f172a;
+  background: #0a0e1a;
   color: #e2e8f0;
   padding: 24px;
   border-radius: 12px;
   max-height: 85vh;
   overflow-y: auto;
-  min-width: 960px;
-  max-width: 1100px;
+  width: 900px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.8);
 }
-.modal-header {
+
+.player-modal-header {
   position: relative;
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
 }
-.modal-title {
+
+.player-modal-header::before {
+  content: '';
+  width: 24px;
+  height: 24px;
+}
+
+.player-modal-heading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.player-modal-title {
   margin: 0;
   font-size: 24px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  text-align: center;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
-.modal-subtitle {
-  margin: 0 0 16px;
+
+.player-modal-subtitle {
+  margin: 0;
   font-size: 12px;
   color: #94a3b8;
-  text-align: center;
 }
-.close-button {
+
+.modal-close-button {
   position: absolute;
   right: 0;
   background: transparent;
@@ -501,258 +628,318 @@ function formatCode(value) {
   color: #94a3b8;
   font-size: 24px;
   cursor: pointer;
-  line-height: 1;
 }
 
-/* ====== NUEVA ESTRUCTURA (mockup) ====== */
-.top-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-.card {
-  background: rgba(17, 24, 39, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  border-radius: 12px;
-  padding: 16px;
-}
-.card-title {
-  margin: 0 0 12px;
-  font-size: 14px;
-  color: #38bdf8;
-  text-transform: uppercase;
-}
-
-/* bloque grande del ranking (como PASSING 200.2 #6) */
-.rank-box {
-  background: rgba(30, 41, 59, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  border-radius: 10px;
-  padding: 18px 16px;
-}
-.rank-metric {
-  text-transform: uppercase;
-  font-size: 12px;
-  color: #cbd5f5;
-  letter-spacing: 0.08em;
-  margin-bottom: 6px;
-}
-.rank-line {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.rank-value {
-  font-size: 20px;
-  font-weight: 800;
-  color: #f8fafc;
-}
-.rank-hash {
-  font-size: 12px;
-  color: #cbd5f5;
-}
-
-/* markets a la derecha */
-.market-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-.market-item {
-  background: rgba(30, 41, 59, 0.9);
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.12);
+.player-modal-body {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-.market-label {
-  font-size: 11px;
-  color: #cbd5f5;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.market-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: #f8fafc;
+  gap: 24px;
 }
 
-/* tabla de abajo */
-.table-section {
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
-  padding-top: 16px;
+.modal-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
 }
-.stats-table-wrapper { overflow-x: auto; }
-.stats-table {
+
+.modal-summary-card {
+  flex: 1 1 0;
+  min-width: 320px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-x: auto;
+}
+
+.modal-summary-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  text-transform: uppercase;
+  color: #38bdf8;
+  text-align: center;
+  font-weight: bold;
+}
+
+.modal-summary-table-wrapper {
+  overflow-x: auto;
+}
+
+.modal-summary-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
-  min-width: 720px;
 }
-.stats-table thead {
+
+.modal-summary-table thead {
   background: rgba(30, 41, 59, 0.8);
 }
-th, td {
+
+.modal-summary-table th,
+.modal-summary-table td {
   border: 1px solid rgba(71, 85, 105, 0.4);
   padding: 6px;
   text-align: center;
 }
-.value-cell { font-weight: 600; }
-.value-cell.stat-over { color: #22c55e; }
-.value-cell.stat-under { color: #ef4444; }
-.value-cell.stat-equal { color: #facc15; }
-.value-cell.neutral { color: #cbd5f5; }
+
+.modal-summary-table th {
+  text-transform: uppercase;
+  color: #cbd5f5;
+}
+
+.modal-summary-table td {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.market-table-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
+.market-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  border-radius: 12px;
+  table-layout: fixed;
+}
+
+.market-table thead {
+  text-transform: uppercase;
+  background: #111b31;
+}
+
+.market-table th,
+.market-table td {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #cbd5f5;
+  text-align: center;
+  letter-spacing: 0.04em;
+  border: none;
+}
+
+.market-value {
+  font-weight: 700;
+  color: #facc15;
+  font-size: 14px;
+}
+
+.rank-table td {
+  color: #f8fafc;
+}
+
+.rank-value {
+  font-weight: 600;
+  color: #facc15;
+}
+
+.rank-meta {
+  margin-left: 4px;
+  font-size: 11px;
+  color: #38bdf8;
+}
+
+.modal-placeholder {
+  margin: 0;
+  font-size: 12px;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.modal-section-title {
+  margin: 0;
+  font-size: 14px;
+  text-transform: uppercase;
+  color: #38bdf8;
+  text-align: center;
+  font-weight: bold;
+}
+
+.modal-stats-table-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  padding-top: 12px;
+}
+
+.modal-stats-table,
+.games-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.games-table {
+  min-width: 720px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  border-radius: 12px;
+  table-layout: fixed;
+  overflow: hidden;
+}
+
+.modal-stats-table thead,
+.games-table thead {
+  background: #111b31;
+}
+
+.modal-stats-table th,
+.modal-stats-table td,
+.games-table th,
+.games-table td {
+  padding: 10px 12px;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: none;
+  color: #cbd5f5;
+}
+
+.games-table tbody tr {
+  border-top: 1px solid rgba(56, 189, 248, 0.12);
+}
+
+.games-table tbody tr:first-child {
+  border-top: none;
+}
+
+.games-table tbody tr:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.game-row {
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.game-row--active {
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.value-cell {
+  font-weight: 600;
+}
+
+.value-cell.stat-hit-text {
+  color: #22c55e;
+}
+
+.value-cell.stat-miss-text {
+  color: #ef4444;
+}
+
+.value-cell.stat-push-text {
+  color: #facc15;
+}
+
+.value-cell.stat-neutral-text {
+  color: #cbd5f5;
+}
+
+.game-details-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.game-details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.12);
+  padding-bottom: 8px;
+}
+
+.game-details-meta {
+  text-align: left;
+}
+
+.game-details-date {
+  margin: 0;
+  font-size: 13px;
+  color: #cbd5f5;
+}
+
+.game-details-matchup {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+.game-details-score {
+  margin: 0 6px;
+  color: #f8fafc;
+}
+
+.game-details-minutes {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.game-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 12px;
+}
+
+.game-details-grid.secondary {
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  padding-top: 12px;
+}
+
+.game-details-item {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  border-radius: 8px;
+  padding: 8px;
+  text-align: center;
+}
+
+.game-details-label {
+  margin: 0;
+  font-size: 11px;
+  color: #94a3b8;
+  letter-spacing: 0.04em;
+}
+
+.game-details-value {
+  margin: 4px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
 .modal-state {
   padding: 16px;
   text-align: center;
   color: #94a3b8;
-  background: rgba(15, 23, 42, 0.45);
-  border-radius: 8px;
+  font-size: 13px;
 }
-.modal-state.error { color: #ef4444; }
-.game-cell { font-weight: 600; }
 
-.mt-12 { margin-top: 12px; }
+.modal-state.error {
+  color: #ef4444;
+}
 
 @media (max-width: 1024px) {
-  .modal-content { min-width: auto; width: 95vw; }
-  .top-row { grid-template-columns: 1fr; }
-}
+  .modal-content {
+    width: 95vw;
+  }
 
-/* --- Card y título --- */
-.markets-card {
-  background: rgba(17, 24, 39, 0.9);            /* fondo del card */
-  border: 1px solid rgba(148, 163, 184, 0.12);  /* borde tenue */
-  border-radius: 12px;
-  padding: 12px 12px 6px;
-}
-
-.markets-title {
-  margin: 0 0 8px;
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  color: #38bdf8;             /* cian del mock */
-  text-transform: uppercase;
-  text-align: center;
-}
-
-/* --- Tabla --- */
-.markets-table-wrap {
-  overflow-x: auto;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.6); /* panel interno oscuro */
-  border: 1px solid rgba(148, 163, 184, 0.1);
-}
-
-.markets-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-}
-
-.markets-table thead th {
-  background: rgba(30, 41, 59, 0.9);   /* banda superior como el mock */
-  color: #cbd5f5;
-  font-size: 12px;
-  text-transform: uppercase;
-  padding: 10px 8px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-  text-align: center;
-}
-
-.markets-table tbody td {
-  padding: 12px 8px;
-  text-align: center;
-  border-top: 1px solid rgba(148, 163, 184, 0.06);
-}
-
-/* valor en amarillo, más grueso */
-.market-value-cell {
-  color: #facc15;
-  font-weight: 700;
-  font-size: 14px;
-}
-
-/* bordes suaves alrededor de todo el módulo (look del mock) */
-.markets-card,
-.markets-table-wrap {
-  box-shadow: inset 0 0 0 1px rgba(2, 6, 23, 0.2);
-}
-
-/* Responsivo: columnas estrechas mantienen legibilidad */
-@media (max-width: 480px) {
-  .markets-table thead th,
-  .markets-table tbody td {
-    font-size: 11px;
-    padding: 10px 6px;
+  .modal-summary-row {
+    flex-direction: column;
   }
 }
-
-/* Contenedor en columnas (3 en desktop, responsive) */
-.defense-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0; /* el mock no muestra separación visible entre columnas */
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.10);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-/* Cada “columna” */
-.defense-col {
-  padding: 12px 16px;
-  border-right: 1px solid rgba(148, 163, 184, 0.08);
-}
-.defense-col:last-child {
-  border-right: 0;
-}
-
-/* Encabezado de cada columna (LABEL) */
-.def-label {
-  background: rgba(30, 41, 59, 0.9);
-  color: #cbd5f5;
-  text-transform: uppercase;
-  font-size: 12px;
-  letter-spacing: .08em;
-  font-weight: 700;
-  padding: 10px 12px;
-  margin: -12px -16px 10px;  /* ocupa todo el ancho de la columna */
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-  text-align: center;
-}
-
-/* Línea con valor a la izquierda y #rank a la derecha (en la misma fila) */
-.def-line {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 12px;
-  padding: 2px 0 4px;
-}
-
-.def-value {
-  color: #f8fafc;
-  font-weight: 700;
-  font-size: 14px;    /* súbelo a 18–20 si quieres más presencia */
-}
-
-.def-rank {
-  color: #60a5fa;       /* azul “link” del mock */
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* Responsive: 2 columnas en tablets, 1 en móviles */
-@media (max-width: 900px) {
-  .defense-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 520px) {
-  .defense-grid { grid-template-columns: 1fr; }
-}
-
-
 </style>
