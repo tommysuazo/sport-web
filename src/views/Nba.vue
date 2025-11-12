@@ -485,48 +485,63 @@ function buildRecordInfo(teamPayload = {}, performance) {
   const baseLosses = parseRecordValue(teamPayload.losses ?? teamPayload.record?.losses);
   const baseTies = parseRecordValue(teamPayload.ties ?? teamPayload.record?.ties);
 
+  const overallRecord = findRecordEntry(records, ['overall', 'season', 'record', 'wd']);
+  const recentRecord = findRecordEntry(records, [
+    'last_games',
+    'recent',
+    'recentgames',
+    'lastgames',
+    'lastgameswd',
+    'last_7',
+    'last7',
+    'l7',
+    'last10',
+    'last_10',
+    'l10',
+    'recentwd',
+  ]);
+  const atsRecord = findRecordEntry(records, ['ats', 'recent_ats', 'ats_recent', 'l7_ats', 'last_7_ats']);
+  const overUnderRecord = findRecordEntry(records, [
+    'over_under',
+    'overunder',
+    'ou',
+    'recent_over_under',
+    'recentou',
+    'last7_over_under',
+    'last_7_over_under',
+  ]);
+
+  const recentGamesCount = parseRecordValue(
+    recentRecord?.gamesEvaluated ?? recentRecord?.games_evaluated ?? performance?.lastGamesTaken
+  );
+  const atsGamesCount = parseRecordValue(
+    atsRecord?.gamesEvaluated ?? atsRecord?.games_evaluated ?? recentGamesCount
+  );
+  const ouGamesCount = parseRecordValue(
+    overUnderRecord?.gamesEvaluated ?? overUnderRecord?.games_evaluated ?? recentGamesCount
+  );
+
   const columns = [
     buildWinLossColumn({
       key: 'overall',
       header: 'W/D',
-      record: findRecordEntry(records, ['overall', 'season', 'record', 'wd']),
+      record: overallRecord,
       fallback: { wins: baseWins, losses: baseLosses, ties: baseTies },
     }),
     buildWinLossColumn({
-      key: 'last7-wd',
-      header: 'L7 W/D',
-      record: findRecordEntry(records, [
-        'last_games',
-        'lastgames',
-        'last_7',
-        'last7',
-        'l7',
-        'last-seven',
-        'last7_wd',
-        'last_7_wd',
-        'wd_last7',
-      ]),
+      key: 'recent-wd',
+      header: buildSeriesHeader(recentGamesCount, 'W/D', 'L7 W/D'),
+      record: recentRecord,
     }),
     buildWinLossColumn({
-      key: 'last7-ats',
-      header: 'L7 ATS',
-      record: findRecordEntry(records, ['ats', 'last_7_ats', 'last7_ats', 'ats_last7', 'ats_last_7', 'l7_ats']),
+      key: 'recent-ats',
+      header: buildSeriesHeader(atsGamesCount, 'ATS', 'L7 ATS'),
+      record: atsRecord,
     }),
     buildOverUnderColumn({
-      key: 'last7-ou',
-      header: 'L7 O/U',
-      record: findRecordEntry(records, [
-        'over_under',
-        'overunder',
-        'last7_ou',
-        'last_7_ou',
-        'ou_last7',
-        'ou_last_7',
-        'last-seven-ou',
-        'last7_over_under',
-        'last_7_over_under',
-        'over_under_last_7',
-      ]),
+      key: 'recent-ou',
+      header: buildSeriesHeader(ouGamesCount, 'O/U', 'L7 O/U'),
+      record: overUnderRecord,
     }),
   ];
 
@@ -584,6 +599,14 @@ function buildRecordPlaceholder(key, header) {
     text: '-',
     state: 'neutral',
   };
+}
+
+function buildSeriesHeader(gamesCount, suffix, fallback) {
+  const numeric = Number.isFinite(gamesCount) && gamesCount > 0 ? gamesCount : null;
+  if (numeric) {
+    return `L${numeric} ${suffix}`.trim();
+  }
+  return fallback;
 }
 
 function formatRecordText(wins, losses, ties, gamesEvaluated) {
@@ -710,14 +733,65 @@ function buildTeamAverageMap(entries) {
 function buildPerformanceMap(entries) {
   const map = new Map();
   entries.forEach((entry) => {
-    const teamId = normalizeId(entry?.team?.id ?? entry?.team_id);
+    const teamId = normalizeId(entry?.team?.id ?? entry?.team_id ?? entry?.team);
     if (!teamId) return;
+    const lastGamesTaken = parseRecordValue(
+      entry.last_games_taken ?? entry.lastGamesTaken ?? entry.requested_games ?? entry.records?.games_evaluated
+    );
+    const records = {};
+    const overallRecord = normalizePerformanceWinLoss(entry.overall ?? entry.record, null);
+    if (overallRecord) {
+      records.overall = overallRecord;
+    }
+    const lastGamesRecord = normalizePerformanceWinLoss(entry.records, lastGamesTaken);
+    if (lastGamesRecord) {
+      records.last_games = lastGamesRecord;
+    }
+    const atsRecord = normalizePerformanceWinLoss(entry.ats, lastGamesTaken);
+    if (atsRecord) {
+      records.ats = atsRecord;
+    }
+    const overUnderRecord = normalizePerformanceOverUnder(entry.over_under, lastGamesTaken);
+    if (overUnderRecord) {
+      records.over_under = overUnderRecord;
+    }
     map.set(teamId, {
       summary: entry.summary ?? '',
-      records: entry.records ?? {},
+      lastGamesTaken: lastGamesTaken ?? null,
+      records,
     });
   });
   return map;
+}
+
+function normalizePerformanceWinLoss(source, fallbackGames) {
+  if (!source || typeof source !== 'object') return null;
+  const wins = parseRecordValue(source.wins ?? source.win);
+  const losses = parseRecordValue(source.losses ?? source.loss);
+  const ties = parseRecordValue(source.ties ?? source.tie ?? source.tied ?? source.push ?? source.pushes);
+  if (wins === null && losses === null && ties === null) return null;
+  const gamesEvaluated = parseRecordValue(source.games_evaluated ?? source.games ?? fallbackGames);
+  const normalized = {};
+  if (wins !== null) normalized.wins = wins;
+  if (losses !== null) normalized.losses = losses;
+  if (ties !== null) normalized.ties = ties;
+  if (gamesEvaluated !== null) normalized.games_evaluated = gamesEvaluated;
+  return normalized;
+}
+
+function normalizePerformanceOverUnder(source, fallbackGames) {
+  if (!source || typeof source !== 'object') return null;
+  const overs = parseRecordValue(source.over ?? source.overs ?? source.wins ?? source.win);
+  const unders = parseRecordValue(source.under ?? source.unders ?? source.losses ?? source.loss);
+  const pushes = parseRecordValue(source.pushes ?? source.push ?? source.ties ?? source.tie ?? source.tied);
+  if (overs === null && unders === null && pushes === null) return null;
+  const gamesEvaluated = parseRecordValue(source.games_evaluated ?? source.games ?? fallbackGames);
+  const normalized = {};
+  if (overs !== null) normalized.over = overs;
+  if (unders !== null) normalized.under = unders;
+  if (pushes !== null) normalized.pushes = pushes;
+  if (gamesEvaluated !== null) normalized.games_evaluated = gamesEvaluated;
+  return normalized;
 }
 
 function extractLineupGames(payload) {
@@ -1142,8 +1216,55 @@ function handlePickEntryRemove(entry) {
   }
 }
 
-function handlePickEntrySelect() {
-  // Placeholder for future interactions when selecting a pick list entry.
+function handlePickEntrySelect(entry) {
+  if (!entry) return;
+  if (entry.type === 'team') {
+    const matchupTeam = findTeamById(entry.teamId);
+    if (matchupTeam) {
+      openTeamModal(matchupTeam);
+    }
+    return;
+  }
+  if (entry.type === 'player') {
+    const located = findPlayerById(entry.playerId, entry.teamId, entry.sectionKey);
+    if (located?.team && located?.row) {
+      openPlayerModal(located.team, located.row);
+    }
+  }
+}
+
+function findTeamById(teamId) {
+  const normalizedId = normalizeId(teamId);
+  if (!normalizedId) return null;
+  for (const matchup of matchups.value) {
+    if (normalizeId(matchup.homeTeam?.id) === normalizedId) return matchup.homeTeam;
+    if (normalizeId(matchup.awayTeam?.id) === normalizedId) return matchup.awayTeam;
+  }
+  return null;
+}
+
+function findPlayerById(playerId, teamId, sectionKey = null) {
+  const normalizedPlayerId = normalizeId(playerId);
+  if (!normalizedPlayerId) return null;
+  const normalizedTeamId = normalizeId(teamId);
+  const normalizedSectionKey = sectionKey ? String(sectionKey) : null;
+
+  for (const matchup of matchups.value) {
+    const teams = [matchup.awayTeam, matchup.homeTeam].filter(Boolean);
+    for (const team of teams) {
+      if (normalizedTeamId && normalizeId(team.id) !== normalizedTeamId) continue;
+      const sections = Array.isArray(team.playerSections) ? team.playerSections : [];
+      for (const section of sections) {
+        if (normalizedSectionKey && section.key !== normalizedSectionKey) continue;
+        const row = section.rows.find((entry) => normalizeId(entry.id) === normalizedPlayerId);
+        if (row) {
+          return { team, section, row };
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 function openTeamModal(team) {

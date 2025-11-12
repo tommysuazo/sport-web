@@ -153,8 +153,6 @@
 import { computed, ref, watch } from 'vue';
 import axios from 'axios';
 
-import { buildNbaApiUrl } from '../utils/nbaApi';
-
 const STAT_TYPES = ['points', 'rebounds', 'assists', 'pra', 'pt3'];
 
 const STAT_LABELS = {
@@ -209,6 +207,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close']);
+
+const DEFAULT_STATS_BASE = import.meta.env?.VITE_NBA_PLAYER_STATS_URL ?? 'http://localhost/nba/players';
 
 const playerStats = ref([]);
 const loading = ref(false);
@@ -306,6 +306,11 @@ const selectedGameDetails = computed(() => {
   return performanceRows.value.find((row) => row.id === selectedGameId.value)?.details ?? null;
 });
 
+const PLAYER_STATS_URL = (playerId) => {
+  const normalizedBase = (DEFAULT_STATS_BASE || '').replace(/\/$/, '');
+  return `${normalizedBase}/${encodeURIComponent(playerId)}/stats`;
+};
+
 watch(
   () => props.visible,
   (isVisible) => {
@@ -314,7 +319,8 @@ watch(
     } else {
       selectedGameId.value = null;
     }
-  }
+  },
+  { immediate: true }
 );
 
 watch(
@@ -347,7 +353,7 @@ async function loadPlayerStats(force = false) {
   loading.value = true;
   error.value = '';
   try {
-    const { data } = await axios.get(buildNbaApiUrl(`players/${encodeURIComponent(playerId)}/stats`));
+    const { data } = await axios.get(PLAYER_STATS_URL(playerId));
     playerStats.value = toArray(data?.stats ?? data);
   } catch (err) {
     console.warn('Unable to load NBA player stats', playerId, err);

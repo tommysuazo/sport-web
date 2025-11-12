@@ -1,4 +1,6 @@
 <script setup>
+import { onBeforeUnmount, watch } from 'vue';
+
 const props = defineProps({
   items: {
     type: Array,
@@ -24,6 +26,10 @@ function handleClose() {
   emit('close');
 }
 
+function handleOverlayClick() {
+  handleClose();
+}
+
 function handleSelect(item) {
   emit('select', item);
 }
@@ -32,6 +38,29 @@ function handleRemove(event, item) {
   event?.preventDefault?.();
   emit('remove', item);
 }
+
+function handleKeydown(event) {
+  if (event?.key === 'Escape') {
+    emit('close');
+  }
+}
+
+watch(
+  () => props.open,
+  (isOpen) => {
+    if (typeof window === 'undefined') return;
+    window.removeEventListener('keydown', handleKeydown);
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeydown);
+    }
+  },
+  { immediate: true }
+);
+
+onBeforeUnmount(() => {
+  if (typeof window === 'undefined') return;
+  window.removeEventListener('keydown', handleKeydown);
+});
 </script>
 
 <template>
@@ -50,6 +79,7 @@ function handleRemove(event, item) {
       <div
         v-if="props.open"
         class="pick-list__overlay"
+        @click="handleOverlayClick"
       />
     </transition>
 
@@ -163,7 +193,7 @@ function handleRemove(event, item) {
   inset: 0;
   background: rgba(15, 23, 42, 0.55);
   backdrop-filter: blur(6px);
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 40;
 }
 

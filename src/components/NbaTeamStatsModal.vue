@@ -10,7 +10,7 @@
       </header>
 
       <section v-if="teamMarkets.length" class="modal-section market-section">
-        <h3>Mercados</h3>
+        <h3>MARKETS</h3>
         <div class="market-table-wrapper">
           <table class="market-table">
             <thead>
@@ -39,7 +39,7 @@
       </section>
 
       <section class="modal-section stats-section">
-        <h3>Juegos</h3>
+        <h3>Games</h3>
         <div v-if="loading" class="modal-state">Cargando historial...</div>
         <div v-else-if="error" class="modal-state error">{{ error }}</div>
         <div v-else-if="!parsedGames.length" class="modal-state">Sin juegos registrados.</div>
@@ -344,36 +344,33 @@ const close = () => emit('close');
 }
 
 .modal-header {
+  position: relative;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 20px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
 .modal-header__title {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  text-align: center;
 }
 
 .modal-title {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #38bdf8;
-}
-
-.modal-subtitle {
-  margin: 0;
-  font-size: 13px;
-  color: #94a3b8;
 }
 
 .modal-record {
-  font-weight: 500;
-  letter-spacing: 0.05em;
+  margin: 4px 0 0;
+  color: #60a5fa;
+}
+
+.modal-subtitle {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 4px 0 0;
 }
 
 .close-button {
@@ -382,54 +379,61 @@ const close = () => emit('close');
   color: #94a3b8;
   font-size: 24px;
   cursor: pointer;
-  transition: color 0.2s ease;
-}
-
-.close-button:hover {
-  color: #f8fafc;
+  position: absolute;
+  top: 0;
+  right: 0;
 }
 
 .modal-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 16px;
+  margin-bottom: 24px;
 }
 
 .modal-section h3 {
-  margin: 0;
+  margin: 0 0 8px;
   font-size: 14px;
-  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #f8fafc;
+  color: #38bdf8;
+  text-align: center;
 }
 
-.market-table-wrapper {
-  overflow-x: auto;
+.market-section .market-table-wrapper {
+  display: flex;
+  justify-content: center;
 }
 
 .market-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 320px;
+  min-width: 260px;
   background: rgba(15, 23, 42, 0.55);
   border: 1px solid rgba(56, 189, 248, 0.12);
   border-radius: 12px;
   table-layout: fixed;
 }
 
+.market-table thead {
+  text-transform: uppercase;
+  background: #111b31;
+}
+
 .market-table th,
 .market-table td {
-  padding: 8px;
-  text-align: center;
-  font-size: 13px;
-  border: 1px solid rgba(56, 189, 248, 0.08);
+  padding: 10px 12px;
+  font-size: 12px;
   color: #cbd5f5;
+  text-align: center;
+  letter-spacing: 0.04em;
 }
 
 .market-table th {
-  font-weight: 600;
   text-transform: uppercase;
+  font-weight: 700;
+}
+
+.market-table td {
+  font-size: 14px;
+  color: #facc15;
+  font-weight: 600;
 }
 
 .market-value {
@@ -437,19 +441,9 @@ const close = () => emit('close');
   color: #facc15;
 }
 
-.modal-state {
-  padding: 24px;
-  background: rgba(15, 23, 42, 0.4);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 12px;
-  text-align: center;
-  font-size: 14px;
-  color: #cbd5f5;
-}
-
-.modal-state.error {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.4);
+.stats-section {
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  padding-top: 16px;
 }
 
 .games-table-wrapper {
@@ -459,42 +453,70 @@ const close = () => emit('close');
 .games-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 640px;
+  min-width: 260px;
   background: rgba(15, 23, 42, 0.55);
   border: 1px solid rgba(56, 189, 248, 0.12);
   border-radius: 12px;
-  font-size: 13px;
+  table-layout: fixed;
 }
 
 .games-table thead {
-  background: rgba(15, 23, 42, 0.7);
+  background: #111b31;
 }
 
 .games-table th,
 .games-table td {
-  padding: 10px;
+  padding: 6px;
   text-align: center;
-  border: 1px solid rgba(56, 189, 248, 0.08);
-  color: #e2e8f0;
+  font-size: 12px;
 }
 
 .games-table th {
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 600;
-  color: #9ca3af;
 }
 
 .score-cell {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  font-weight: 600;
-  color: #f8fafc;
 }
 
 .score-separator {
-  font-weight: 400;
   color: #94a3b8;
+}
+
+.metric {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding: 0 4px;
+  font-weight: 600;
+  font-size: 12px;
+  color: #e2e8f0;
+  transition: color 0.2s ease;
+}
+
+.metric--positive {
+  color: #22c55e;
+}
+
+.metric--negative {
+  color: #ef4444;
+}
+
+.metric--neutral {
+  color: #f8fafc;
+}
+
+.modal-state {
+  padding: 16px;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.modal-state.error {
+  color: #ef4444;
 }
 </style>
