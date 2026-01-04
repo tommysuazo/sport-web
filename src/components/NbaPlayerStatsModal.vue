@@ -83,8 +83,8 @@
                 <tr
                   v-for="row in performanceRows"
                   :key="row.id"
-                  :class="['game-row', { 'game-row--active': row.id === selectedGameId }]"
-                  @click="selectGame(row.id)"
+                  class="game-row"
+                  @click="handleGameRowClick(row, $event)"
                 >
                   <td>{{ row.date }}</td>
                   <td>{{ row.versus }}</td>
@@ -103,45 +103,69 @@
               </tbody>
             </table>
             <p v-else class="modal-placeholder">Sin registros de juegos.</p>
-            <section v-if="selectedGameDetails" class="game-details-card">
-              <header class="game-details-header">
-                <div class="game-details-meta">
-                  <p class="game-details-date">{{ selectedGameDetails.date }}</p>
-                  <p class="game-details-matchup">
-                    {{ selectedGameDetails.teamLabel }}
-                    <span class="game-details-score" v-if="selectedGameDetails.score">
-                      {{ selectedGameDetails.score }}
-                    </span>
-                    vs
-                    {{ selectedGameDetails.opponentLabel }}
-                  </p>
-                  <p class="game-details-minutes">MIN {{ selectedGameDetails.minutes }}</p>
-                </div>
-              </header>
-              <div class="game-details-grid">
-                <div
-                  v-for="stat in selectedGameDetails.primaryStats"
-                  :key="`detail-${stat.label}`"
-                  class="game-details-item"
-                >
-                  <p class="game-details-label">{{ stat.label }}</p>
-                  <p class="game-details-value">{{ stat.value }}</p>
-                </div>
-              </div>
-              <div class="game-details-grid secondary">
-                <div
-                  v-for="stat in selectedGameDetails.secondaryStats"
-                  :key="`secondary-${stat.label}`"
-                  class="game-details-item"
-                >
-                  <p class="game-details-label">{{ stat.label }}</p>
-                  <p class="game-details-value">{{ stat.value }}</p>
-                </div>
-              </div>
-            </section>
           </template>
         </div>
       </section>
+
+      <div
+        v-if="tooltipVisible && activeTooltipRow"
+        class="team-comparison-tooltip"
+        :style="tooltipStyle"
+      >
+        <button type="button" class="team-comparison-tooltip__close" @click.stop="resetTooltipState">×</button>
+        <p class="team-comparison-tooltip__title">
+          {{ activeTooltipRow.teamComparison.teamLabel }} vs {{ activeTooltipRow.teamComparison.opponentLabel }}
+        </p>
+        <table class="team-comparison-tooltip__table">
+          <thead>
+            <tr>
+              <th>STAT</th>
+              <th>{{ activeTooltipRow.teamComparison.teamLabel }}</th>
+              <th>{{ activeTooltipRow.teamComparison.opponentLabel }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in activeTooltipRow.teamComparison.rows" :key="`team-cmp-${row.label}`">
+              <th>{{ row.label }}</th>
+              <td>{{ row.team }}</td>
+              <td>{{ row.opponent }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="activeTooltipRow.injuries" class="team-comparison-tooltip__injuries">
+          <div class="injury-column">
+            <p class="injury-column-title">{{ activeTooltipRow.injuries.team.label }}</p>
+            <ul class="injury-list">
+              <li v-if="!activeTooltipRow.injuries.team.players.length" class="injury-item injury-item--empty">
+                Sin reportes
+              </li>
+              <li
+                v-for="player in activeTooltipRow.injuries.team.players"
+                :key="`inj-team-${player}`"
+                class="injury-item"
+              >
+                {{ player }}
+              </li>
+            </ul>
+          </div>
+          <div class="injury-column">
+            <p class="injury-column-title">{{ activeTooltipRow.injuries.opponent.label }}</p>
+            <ul class="injury-list">
+              <li v-if="!activeTooltipRow.injuries.opponent.players.length" class="injury-item injury-item--empty">
+                Sin reportes
+              </li>
+              <li
+                v-for="player in activeTooltipRow.injuries.opponent.players"
+                :key="`inj-opp-${player}`"
+                class="injury-item"
+              >
+                {{ player }}
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -150,7 +174,7 @@
 
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onBeforeUnmount } from 'vue';
 import axios from 'axios';
 
 const STAT_TYPES = ['points', 'rebounds', 'assists', 'pra', 'pt3'];
@@ -213,7 +237,13 @@ const DEFAULT_STATS_BASE = import.meta.env?.VITE_NBA_PLAYER_STATS_URL ?? 'http:/
 const playerStats = ref([]);
 const loading = ref(false);
 const error = ref('');
-const selectedGameId = ref(null);
+const activeTooltipRow = ref(null);
+const tooltipVisible = ref(false);
+const tooltipPosition = ref({ x: 0, y: 0 });
+
+const TOOLTIP_OFFSET = 16;
+const TOOLTIP_WIDTH = 320;
+const TOOLTIP_HEIGHT = 300;
 
 const normalizedPlayerId = computed(() => normalizeId(props.playerId));
 
@@ -301,10 +331,10 @@ const performanceRows = computed(() =>
     })
 );
 
-const selectedGameDetails = computed(() => {
-  if (!selectedGameId.value) return null;
-  return performanceRows.value.find((row) => row.id === selectedGameId.value)?.details ?? null;
-});
+const tooltipStyle = computed(() => ({
+  top: `${tooltipPosition.value.y}px`,
+  left: `${tooltipPosition.value.x}px`,
+}));
 
 const PLAYER_STATS_URL = (playerId) => {
   const normalizedBase = (DEFAULT_STATS_BASE || '').replace(/\/$/, '');
@@ -317,7 +347,7 @@ watch(
     if (isVisible) {
       loadPlayerStats(true);
     } else {
-      selectedGameId.value = null;
+      resetTooltipState();
     }
   },
   { immediate: true }
@@ -332,7 +362,7 @@ watch(
       playerStats.value = [];
       loading.value = false;
       error.value = '';
-      selectedGameId.value = null;
+      resetTooltipState();
     }
   }
 );
@@ -340,11 +370,18 @@ watch(
 watch(
   () => performanceRows.value,
   () => {
-    if (!performanceRows.value.some((row) => row.id === selectedGameId.value)) {
-      selectedGameId.value = null;
+    if (
+      activeTooltipRow.value &&
+      !performanceRows.value.some((row) => row.id === activeTooltipRow.value.id)
+    ) {
+      resetTooltipState();
     }
   }
 );
+
+onBeforeUnmount(() => {
+  resetTooltipState();
+});
 
 async function loadPlayerStats(force = false) {
   const playerId = normalizedPlayerId.value;
@@ -361,9 +398,6 @@ async function loadPlayerStats(force = false) {
     error.value = 'No se pudieron cargar las estadísticas del jugador.';
   } finally {
     loading.value = false;
-    if (!playerStats.value.some((entry) => entry?.id === selectedGameId.value)) {
-      selectedGameId.value = null;
-    }
   }
 }
 
@@ -380,11 +414,6 @@ function transformStatEntry(entry, markets) {
   const playerTeamCode = formatCode(playerTeam.short_name ?? playerTeam.code ?? playerTeam.name);
   const teamTotals = findTeamTotals(game, entry.team_id, true);
   const opponentTotals = findTeamTotals(game, entry.team_id, false);
-  const score =
-    teamTotals.points !== null && opponentTotals.points !== null
-      ? `${formatNumericDisplay(teamTotals.points)}-${formatNumericDisplay(opponentTotals.points)}`
-      : null;
-
   const timestamp = readTimestamp(game.start_at ?? entry.updated_at ?? entry.created_at);
   const date = formatShortDate(game.start_at ?? entry.updated_at ?? entry.created_at);
   const minutes = formatMinutes(entry.mins ?? entry.minutes);
@@ -411,29 +440,19 @@ function transformStatEntry(entry, markets) {
     metrics.pt3.display = threePointers;
   }
 
-  const details = {
-    date,
-    teamLabel: playerTeamCode || 'TEAM',
-    opponentLabel: opponentCode || '-',
-    minutes: minutes === '-' ? '--' : minutes,
-    score,
-    primaryStats: [
-      { label: 'PTS', value: formatNumericDisplay(points) },
-      { label: 'REB', value: formatNumericDisplay(rebounds) },
-      { label: 'AST', value: formatNumericDisplay(assists) },
-      { label: 'PRA', value: formatNumericDisplay(pra) },
-      { label: 'PT3', value: metrics.pt3.display },
-      { label: 'FOULS', value: formatNumericDisplay(fouls) },
-    ],
-    secondaryStats: [
-      { label: 'STL', value: formatNumericDisplay(parseNumeric(entry.steals)) },
-      { label: 'BLK', value: formatNumericDisplay(parseNumeric(entry.blocks)) },
-      { label: 'TOV', value: formatNumericDisplay(parseNumeric(entry.turnovers)) },
-      { label: 'FG', value: fieldGoals },
-      { label: '3P', value: threePointers },
-      { label: 'FT', value: freeThrows },
-    ],
-  };
+  const teamComparison = buildTeamComparison(
+    playerTeamCode || 'TEAM',
+    opponentCode || '-',
+    teamTotals,
+    opponentTotals
+  );
+
+  const injuries = buildInjuryReport(
+    game,
+    entry.team_id,
+    playerTeamCode || 'TEAM',
+    opponentCode || '-'
+  );
 
   return {
     id: entry.id ?? entry.game_id ?? `${opponentLabel}-${timestamp ?? Math.random()}`,
@@ -445,16 +464,47 @@ function transformStatEntry(entry, markets) {
     freeThrows,
     fouls: formatNumericDisplay(fouls),
     timestamp,
-    details,
+    teamComparison,
+    injuries,
   };
 }
 
-function selectGame(id) {
-  if (selectedGameId.value === id) {
-    selectedGameId.value = null;
-  } else {
-    selectedGameId.value = id;
+function handleGameRowClick(row, event) {
+  if (!row?.teamComparison) {
+    resetTooltipState();
+    return;
   }
+  const alreadyOpen = tooltipVisible.value && activeTooltipRow.value?.id === row.id;
+  if (alreadyOpen) {
+    resetTooltipState();
+    return;
+  }
+  activeTooltipRow.value = row;
+  tooltipVisible.value = true;
+  updateTooltipPosition(event);
+}
+
+function updateTooltipPosition(event) {
+  if (!event) return;
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 768;
+  let left = (event.clientX ?? 0) + TOOLTIP_OFFSET;
+  let top = (event.clientY ?? 0) + TOOLTIP_OFFSET;
+  if (left + TOOLTIP_WIDTH > viewportWidth) {
+    left = viewportWidth - TOOLTIP_WIDTH - TOOLTIP_OFFSET;
+  }
+  if (top + TOOLTIP_HEIGHT > viewportHeight) {
+    top = viewportHeight - TOOLTIP_HEIGHT - TOOLTIP_OFFSET;
+  }
+  tooltipPosition.value = {
+    x: Math.max(TOOLTIP_OFFSET, left),
+    y: Math.max(TOOLTIP_OFFSET, top),
+  };
+}
+
+function resetTooltipState() {
+  tooltipVisible.value = false;
+  activeTooltipRow.value = null;
 }
 
 function buildMetric(value, market) {
@@ -487,10 +537,19 @@ function findTeamTotals(game, playerTeamId, sameTeam) {
   const normalizedPlayerTeam = normalizeId(playerTeamId);
   const entry = totals.find((teamStat) => {
     const normalizedTeamId = normalizeId(teamStat?.team_id);
+    if (normalizedPlayerTeam === null) {
+      return sameTeam ? normalizedTeamId === null : normalizedTeamId !== null;
+    }
     return sameTeam ? normalizedTeamId === normalizedPlayerTeam : normalizedTeamId !== normalizedPlayerTeam;
   });
   return {
     points: parseNumeric(entry?.points),
+    rebounds: parseNumeric(entry?.rebounds),
+    assists: parseNumeric(entry?.assists),
+    turnovers: parseNumeric(entry?.turnovers),
+    fieldGoals: formatAttemptLine(entry?.field_goals_made, entry?.field_goals_attempted),
+    threePointers: formatAttemptLine(entry?.three_pointers_made, entry?.three_pointers_attempted),
+    freeThrows: formatAttemptLine(entry?.free_throws_made, entry?.free_throws_attempted),
   };
 }
 
@@ -511,6 +570,112 @@ function formatAttemptLine(made, attempted) {
   return `${formatNumericDisplay(madeValue)}-${formatNumericDisplay(attemptedValue)}`;
 }
 
+function buildTeamComparison(teamLabel, opponentLabel, teamTotals, opponentTotals) {
+  const metricMap = [
+    { key: 'points', label: 'PTS' },
+    { key: 'rebounds', label: 'REB' },
+    { key: 'assists', label: 'AST' },
+    { key: 'turnovers', label: 'TOV' },
+    { key: 'fieldGoals', label: 'FG' },
+    { key: 'threePointers', label: '3P' },
+    { key: 'freeThrows', label: 'FT' },
+  ];
+
+  const rows = metricMap.map(({ key, label }) => ({
+    label,
+    team: formatComparisonValue(teamTotals, key),
+    opponent: formatComparisonValue(opponentTotals, key),
+  }));
+
+  return {
+    teamLabel,
+    opponentLabel,
+    rows,
+  };
+}
+
+function formatComparisonValue(source, key) {
+  if (!source) return '-';
+  const rawValue = source[key];
+  if (rawValue === null || rawValue === undefined) return '-';
+  if (typeof rawValue === 'number') return formatNumericDisplay(rawValue);
+  return String(rawValue);
+}
+
+function buildInjuryReport(game, playerTeamId, playerTeamLabel, opponentLabel) {
+  const injuries = Array.isArray(game?.injuries) ? game.injuries : [];
+  const normalizedPlayerTeam = normalizeId(playerTeamId);
+  const teamPlayers = [];
+  const opponentPlayers = [];
+
+  injuries.forEach((injury) => {
+    const formatted = formatInjuryLabel(injury);
+    const normalizedTeamId = normalizeId(injury?.team_id);
+    if (normalizedTeamId === normalizedPlayerTeam) {
+      teamPlayers.push(formatted);
+    } else {
+      opponentPlayers.push(formatted);
+    }
+  });
+
+  return {
+    team: {
+      label: formatInjuryColumnLabel(playerTeamLabel, true),
+      players: teamPlayers,
+    },
+    opponent: {
+      label: formatInjuryColumnLabel(opponentLabel, false),
+      players: opponentPlayers,
+    },
+  };
+}
+
+function formatInjuryLabel(injury) {
+  if (!injury) return 'Jugador sin datos';
+  const resolvedName = resolveInjuryPlayerName(injury);
+  if (resolvedName) return resolvedName;
+  const fallbackId =
+    injury.player_id ??
+    injury.player?.player_id ??
+    injury.player?.id ??
+    injury.id ??
+    injury.player_info?.id;
+  if (fallbackId !== null && fallbackId !== undefined) {
+    return `Jugador ${fallbackId}`;
+  }
+  return 'Jugador sin datos';
+}
+
+function formatInjuryColumnLabel(label, isPlayerTeam) {
+  const base = label && label !== '-' ? label : isPlayerTeam ? 'Equipo' : 'Rival';
+  return `Lesionados ${base}`;
+}
+
+function resolveInjuryPlayerName(injury) {
+  const nestedPlayer = injury.player ?? injury.player_info ?? null;
+  const candidates = [
+    formatFullName(injury.first_name, injury.last_name),
+    injury.player_name,
+    injury.name,
+    formatFullName(injury.player_first_name, injury.player_last_name),
+  ];
+  if (nestedPlayer) {
+    candidates.push(formatFullName(nestedPlayer.first_name, nestedPlayer.last_name));
+    candidates.push(nestedPlayer.full_name);
+    candidates.push(nestedPlayer.name);
+  }
+  return candidates
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .find((value) => value.length) || '';
+}
+
+function formatFullName(first, last) {
+  const firstName = typeof first === 'string' ? first.trim() : '';
+  const lastName = typeof last === 'string' ? last.trim() : '';
+  if (firstName && lastName) return `${firstName} ${lastName}`;
+  return firstName || lastName || '';
+}
+
 function safeSum(...values) {
   let total = 0;
   let hasValue = false;
@@ -525,6 +690,7 @@ function safeSum(...values) {
 }
 
 function close() {
+  resetTooltipState();
   emit('close');
 }
 
@@ -825,10 +991,6 @@ function formatCode(value) {
   transition: background 0.2s ease;
 }
 
-.game-row--active {
-  background: rgba(59, 130, 246, 0.18);
-}
-
 .value-cell {
   font-weight: 600;
 }
@@ -849,85 +1011,6 @@ function formatCode(value) {
   color: #cbd5f5;
 }
 
-.game-details-card {
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(56, 189, 248, 0.18);
-  border-radius: 12px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.game-details-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid rgba(56, 189, 248, 0.12);
-  padding-bottom: 8px;
-}
-
-.game-details-meta {
-  text-align: left;
-}
-
-.game-details-date {
-  margin: 0;
-  font-size: 13px;
-  color: #cbd5f5;
-}
-
-.game-details-matchup {
-  margin: 4px 0 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #38bdf8;
-}
-
-.game-details-score {
-  margin: 0 6px;
-  color: #f8fafc;
-}
-
-.game-details-minutes {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.game-details-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-  gap: 12px;
-}
-
-.game-details-grid.secondary {
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
-  padding-top: 12px;
-}
-
-.game-details-item {
-  background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(56, 189, 248, 0.12);
-  border-radius: 8px;
-  padding: 8px;
-  text-align: center;
-}
-
-.game-details-label {
-  margin: 0;
-  font-size: 11px;
-  color: #94a3b8;
-  letter-spacing: 0.04em;
-}
-
-.game-details-value {
-  margin: 4px 0 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #f8fafc;
-}
-
 .modal-state {
   padding: 16px;
   text-align: center;
@@ -937,6 +1020,122 @@ function formatCode(value) {
 
 .modal-state.error {
   color: #ef4444;
+}
+
+.team-comparison-tooltip {
+  position: fixed;
+  z-index: 90;
+  min-width: 240px;
+  background: rgba(8, 12, 25, 0.98);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 15px 35px rgba(2, 6, 23, 0.8);
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+.team-comparison-tooltip__close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.team-comparison-tooltip__title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.team-comparison-tooltip__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.team-comparison-tooltip__table thead th {
+  text-align: center;
+  padding: 4px 6px;
+  color: #94a3b8;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.team-comparison-tooltip__table tbody th,
+.team-comparison-tooltip__table tbody td {
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.team-comparison-tooltip__table tbody th {
+  text-align: left;
+  color: #94a3b8;
+  font-weight: 600;
+  width: 30%;
+}
+
+.team-comparison-tooltip__table tbody td {
+  text-align: center;
+  color: #f8fafc;
+  font-weight: 700;
+  width: 35%;
+}
+
+.team-comparison-tooltip__table tbody tr:last-child th,
+.team-comparison-tooltip__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.team-comparison-tooltip__injuries {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.injury-column {
+  flex: 1;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.injury-column-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #38bdf8;
+  text-align: center;
+  letter-spacing: 0.06em;
+}
+
+.injury-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.injury-item {
+  font-size: 12px;
+  color: #f8fafc;
+  text-align: center;
+}
+
+.injury-item--empty {
+  color: #94a3b8;
+  font-style: italic;
 }
 
 @media (max-width: 1024px) {

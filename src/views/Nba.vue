@@ -459,10 +459,27 @@ function resolvePlayerCategory(playerInfo = {}, market = {}, lineupCategoryMap) 
 }
 
 function buildInjuryEntry(player = {}) {
-  const status = player.injury_status ?? player.injury?.status ?? player.status ?? 'Questionable';
+  const nestedPlayer = player.player ?? player.player_info ?? {};
+  const merged = {
+    ...nestedPlayer,
+    ...player,
+    first_name: player.first_name ?? nestedPlayer.first_name,
+    last_name: player.last_name ?? nestedPlayer.last_name,
+    full_name: player.full_name ?? nestedPlayer.full_name,
+    name: player.name ?? nestedPlayer.name,
+  };
+  const status =
+    player.injury_status ??
+    player.injury?.status ??
+    player.status ??
+    nestedPlayer.injury_status ??
+    nestedPlayer.status ??
+    'Questionable';
   return {
-    id: normalizeId(player.id ?? player.player_id),
-    name: player.name ?? resolvePlayerName(player),
+    id: normalizeId(
+      player.id ?? player.player_id ?? nestedPlayer.id ?? nestedPlayer.player_id ?? merged.id ?? merged.player_id
+    ),
+    name: resolvePlayerName(merged),
     status,
   };
 }
@@ -604,7 +621,7 @@ function buildRecordPlaceholder(key, header) {
 function buildSeriesHeader(gamesCount, suffix, fallback) {
   const numeric = Number.isFinite(gamesCount) && gamesCount > 0 ? gamesCount : null;
   if (numeric) {
-    return `L${numeric} ${suffix}`.trim();
+    return `L${numeric}`.trim();
   }
   return fallback;
 }
@@ -616,9 +633,9 @@ function formatRecordText(wins, losses, ties, gamesEvaluated) {
   const base = `${baseWins}-${baseLosses}`;
   const suffix = Number.isFinite(gamesEvaluated) && gamesEvaluated > 0 ? ` (${gamesEvaluated})` : '';
   if (baseTies > 0) {
-    return `${base}-${baseTies}${suffix}`;
+    return `${base}-${baseTies}`;
   }
-  return `${base}${suffix}`;
+  return `${base}`;
 }
 
 function formatOverUnderText(overs, unders, pushes, gamesEvaluated) {
@@ -626,11 +643,10 @@ function formatOverUnderText(overs, unders, pushes, gamesEvaluated) {
   const baseUnders = Number.isFinite(unders) ? unders : 0;
   const basePushes = Number.isFinite(pushes) ? pushes : 0;
   const base = `${baseOvers}-${baseUnders}`;
-  const suffix = Number.isFinite(gamesEvaluated) && gamesEvaluated > 0 ? ` (${gamesEvaluated})` : '';
   if (basePushes > 0) {
-    return `${base}-${basePushes}${suffix}`;
+    return `${base}-${basePushes}`;
   }
-  return `${base}${suffix}`;
+  return `${base}`;
 }
 
 function resolveRecordState(positive, negative) {
@@ -1748,7 +1764,6 @@ function closePlayerModal() {
   padding: 6px 10px;
   font-size: 12px;
   text-align: center;
-  color: #cbd5f5;
 }
 
 .team-summary-table th {
@@ -2053,6 +2068,7 @@ function closePlayerModal() {
 
 .injury-name {
   font-weight: 600;
+  color: #fde047;
 }
 
 .injury-status {
