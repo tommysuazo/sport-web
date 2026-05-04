@@ -71,6 +71,7 @@
                   <th>DATE</th>
                   <th>VS</th>
                   <th>MIN</th>
+                  <th>ST</th>
                   <th v-for="stat in STAT_TYPES" :key="`stat-head-${stat}`">
                     {{ STAT_LABELS[stat] }}
                   </th>
@@ -89,6 +90,7 @@
                   <td>{{ row.date }}</td>
                   <td>{{ row.versus }}</td>
                   <td>{{ row.minutes }}</td>
+                  <td>{{ row.starterMarker }}</td>
                   <td
                     v-for="stat in STAT_TYPES"
                     :key="`metric-${row.id}-${stat}`"
@@ -98,7 +100,7 @@
                   </td>
                   <td class="value-cell stat-neutral-text">{{ row.fieldGoals }}</td>
                   <td class="value-cell stat-neutral-text">{{ row.freeThrows }}</td>
-                  <td class="value-cell stat-neutral-text">{{ row.fouls }}</td>
+                  <td :class="['value-cell', resolveFoulsClass(row.foulsRaw)]">{{ row.fouls }}</td>
                 </tr>
               </tbody>
             </table>
@@ -417,6 +419,7 @@ function transformStatEntry(entry, markets) {
   const timestamp = readTimestamp(game.start_at ?? entry.updated_at ?? entry.created_at);
   const date = formatShortDate(game.start_at ?? entry.updated_at ?? entry.created_at);
   const minutes = formatMinutes(entry.mins ?? entry.minutes);
+  const isStarter = parseBoolean(entry.is_starter);
 
   const points = parseNumeric(entry.points);
   const rebounds = parseNumeric(entry.rebounds);
@@ -459,9 +462,11 @@ function transformStatEntry(entry, markets) {
     versus: opponentLabel,
     date,
     minutes,
+    starterMarker: isStarter ? '*' : '',
     metrics,
     fieldGoals,
     freeThrows,
+    foulsRaw: fouls,
     fouls: formatNumericDisplay(fouls),
     timestamp,
     teamComparison,
@@ -524,6 +529,11 @@ function resolveMetricClass(_statKey, metric) {
   if (metric.value > metric.market) return 'stat-hit-text';
   if (metric.value < metric.market) return 'stat-miss-text';
   return 'stat-push-text';
+}
+
+function resolveFoulsClass(foulsValue) {
+  if (foulsValue !== null && foulsValue !== undefined && foulsValue > 3) return 'stat-miss-text';
+  return 'stat-neutral-text';
 }
 
 function formatNumericDisplay(value) {
@@ -709,6 +719,17 @@ function parseNumeric(value) {
   if (value === null || value === undefined || value === '') return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function parseBoolean(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'si', 'sí'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n'].includes(normalized)) return false;
+  }
+  return false;
 }
 
 function formatShortDate(value) {

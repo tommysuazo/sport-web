@@ -5,6 +5,7 @@ import Home2 from '../views/Home2.vue'
 import Nfl from '../views/Nfl.vue'
 import Nhl from '../views/Nhl.vue'
 import Nba from '../views/Nba.vue'
+import Test from '../views/Test.vue'
 
 const routes = [
   { path: '/', component: Home },
@@ -12,6 +13,7 @@ const routes = [
   { path: '/nfl', component: Nfl },
   { path: '/nhl', component: Nhl },
   { path: '/nba', component: Nba },
+  { path: '/test', component: Test },
   { path: '/:pathMatch(.*)', name: 'NotFound', component: Home },
 ]
 

@@ -531,11 +531,8 @@ function buildRecordInfo(teamPayload = {}, performance) {
   const recentGamesCount = parseRecordValue(
     recentRecord?.gamesEvaluated ?? recentRecord?.games_evaluated ?? performance?.lastGamesTaken
   );
-  const atsGamesCount = parseRecordValue(
-    atsRecord?.gamesEvaluated ?? atsRecord?.games_evaluated ?? recentGamesCount
-  );
-  const ouGamesCount = parseRecordValue(
-    overUnderRecord?.gamesEvaluated ?? overUnderRecord?.games_evaluated ?? recentGamesCount
+  const requestedGamesCount = parseRecordValue(
+    performance?.requestedGames ?? performance?.requested_games ?? performance?.lastGamesTaken
   );
 
   const columns = [
@@ -547,17 +544,18 @@ function buildRecordInfo(teamPayload = {}, performance) {
     }),
     buildWinLossColumn({
       key: 'recent-wd',
-      header: buildSeriesHeader(recentGamesCount, 'W/D', 'L7 W/D'),
+      header: buildSeriesHeader(requestedGamesCount ?? recentGamesCount, 'L7'),
       record: recentRecord,
     }),
     buildWinLossColumn({
       key: 'recent-ats',
-      header: buildSeriesHeader(atsGamesCount, 'ATS', 'L7 ATS'),
+      header: 'ATS',
       record: atsRecord,
+      showTies: true,
     }),
     buildOverUnderColumn({
       key: 'recent-ou',
-      header: buildSeriesHeader(ouGamesCount, 'O/U', 'L7 O/U'),
+      header: 'O/U',
       record: overUnderRecord,
     }),
   ];
@@ -575,7 +573,7 @@ function parseRecordValue(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function buildWinLossColumn({ key, header, record, fallback }) {
+function buildWinLossColumn({ key, header, record, fallback, showTies = false }) {
   const normalized = extractWinLossRecord(record, fallback);
   if (!normalized) {
     return buildRecordPlaceholder(key, header);
@@ -583,11 +581,10 @@ function buildWinLossColumn({ key, header, record, fallback }) {
   const wins = normalized.wins ?? 0;
   const losses = normalized.losses ?? 0;
   const ties = normalized.ties ?? 0;
-  const gamesEvaluated = normalized.gamesEvaluated;
   return {
     key,
     header,
-    text: formatRecordText(wins, losses, ties, gamesEvaluated),
+    text: formatRecordText(wins, losses, ties, { showTies }),
     state: resolveRecordState(wins, losses),
   };
 }
@@ -600,11 +597,10 @@ function buildOverUnderColumn({ key, header, record, fallback }) {
   const overs = normalized.overs ?? 0;
   const unders = normalized.unders ?? 0;
   const pushes = normalized.pushes ?? 0;
-  const gamesEvaluated = normalized.gamesEvaluated;
   return {
     key,
     header,
-    text: formatOverUnderText(overs, unders, pushes, gamesEvaluated),
+    text: formatOverUnderText(overs, unders, pushes),
     state: resolveRecordState(overs, unders),
   };
 }
@@ -618,7 +614,7 @@ function buildRecordPlaceholder(key, header) {
   };
 }
 
-function buildSeriesHeader(gamesCount, suffix, fallback) {
+function buildSeriesHeader(gamesCount, fallback) {
   const numeric = Number.isFinite(gamesCount) && gamesCount > 0 ? gamesCount : null;
   if (numeric) {
     return `L${numeric}`.trim();
@@ -626,27 +622,23 @@ function buildSeriesHeader(gamesCount, suffix, fallback) {
   return fallback;
 }
 
-function formatRecordText(wins, losses, ties, gamesEvaluated) {
+function formatRecordText(wins, losses, ties, options = {}) {
   const baseWins = Number.isFinite(wins) ? wins : 0;
   const baseLosses = Number.isFinite(losses) ? losses : 0;
   const baseTies = Number.isFinite(ties) ? ties : 0;
   const base = `${baseWins}-${baseLosses}`;
-  const suffix = Number.isFinite(gamesEvaluated) && gamesEvaluated > 0 ? ` (${gamesEvaluated})` : '';
-  if (baseTies > 0) {
+  if (options.showTies || baseTies > 0) {
     return `${base}-${baseTies}`;
   }
   return `${base}`;
 }
 
-function formatOverUnderText(overs, unders, pushes, gamesEvaluated) {
+function formatOverUnderText(overs, unders, pushes) {
   const baseOvers = Number.isFinite(overs) ? overs : 0;
   const baseUnders = Number.isFinite(unders) ? unders : 0;
   const basePushes = Number.isFinite(pushes) ? pushes : 0;
   const base = `${baseOvers}-${baseUnders}`;
-  if (basePushes > 0) {
-    return `${base}-${basePushes}`;
-  }
-  return `${base}`;
+  return `${base}-${basePushes}`;
 }
 
 function resolveRecordState(positive, negative) {
@@ -751,29 +743,60 @@ function buildPerformanceMap(entries) {
   entries.forEach((entry) => {
     const teamId = normalizeId(entry?.team?.id ?? entry?.team_id ?? entry?.team);
     if (!teamId) return;
+    const sourceRecords = entry.records && typeof entry.records === 'object' ? entry.records : {};
     const lastGamesTaken = parseRecordValue(
-      entry.last_games_taken ?? entry.lastGamesTaken ?? entry.requested_games ?? entry.records?.games_evaluated
+      entry.last_games_taken ??
+        entry.lastGamesTaken ??
+        entry.requested_games ??
+        sourceRecords.last_games?.games_evaluated ??
+        sourceRecords.last_games?.gamesEvaluated ??
+        sourceRecords.lastGames?.games_evaluated ??
+        sourceRecords.lastGames?.gamesEvaluated ??
+        sourceRecords.games_evaluated
     );
     const records = {};
-    const overallRecord = normalizePerformanceWinLoss(entry.overall ?? entry.record, null);
+    const overallRecord = normalizePerformanceWinLoss(
+      sourceRecords.overall ?? sourceRecords.season ?? sourceRecords.record ?? entry.overall ?? entry.record,
+      null
+    );
     if (overallRecord) {
       records.overall = overallRecord;
     }
-    const lastGamesRecord = normalizePerformanceWinLoss(entry.records, lastGamesTaken);
+    const lastGamesRecord = normalizePerformanceWinLoss(
+      sourceRecords.last_games ??
+        sourceRecords.lastGames ??
+        sourceRecords.recent ??
+        entry.last_games ??
+        entry.lastGames,
+      lastGamesTaken
+    );
     if (lastGamesRecord) {
       records.last_games = lastGamesRecord;
     }
-    const atsRecord = normalizePerformanceWinLoss(entry.ats, lastGamesTaken);
+    const atsRecord = normalizePerformanceWinLoss(
+      sourceRecords.ats ?? sourceRecords.recent_ats ?? entry.ats,
+      lastGamesTaken
+    );
     if (atsRecord) {
       records.ats = atsRecord;
     }
-    const overUnderRecord = normalizePerformanceOverUnder(entry.over_under, lastGamesTaken);
+    const overUnderRecord = normalizePerformanceOverUnder(
+      sourceRecords.over_under ??
+        sourceRecords.overUnder ??
+        sourceRecords.ou ??
+        sourceRecords.recent_over_under ??
+        entry.over_under ??
+        entry.overUnder ??
+        entry.ou,
+      lastGamesTaken
+    );
     if (overUnderRecord) {
       records.over_under = overUnderRecord;
     }
     map.set(teamId, {
       summary: entry.summary ?? '',
       lastGamesTaken: lastGamesTaken ?? null,
+      requestedGames: parseRecordValue(entry.requested_games ?? entry.requestedGames) ?? lastGamesTaken ?? null,
       records,
     });
   });
@@ -786,7 +809,9 @@ function normalizePerformanceWinLoss(source, fallbackGames) {
   const losses = parseRecordValue(source.losses ?? source.loss);
   const ties = parseRecordValue(source.ties ?? source.tie ?? source.tied ?? source.push ?? source.pushes);
   if (wins === null && losses === null && ties === null) return null;
-  const gamesEvaluated = parseRecordValue(source.games_evaluated ?? source.games ?? fallbackGames);
+  const gamesEvaluated = parseRecordValue(
+    source.games_evaluated ?? source.gamesEvaluated ?? source.games ?? fallbackGames
+  );
   const normalized = {};
   if (wins !== null) normalized.wins = wins;
   if (losses !== null) normalized.losses = losses;
@@ -801,7 +826,7 @@ function normalizePerformanceOverUnder(source, fallbackGames) {
   const unders = parseRecordValue(source.under ?? source.unders ?? source.losses ?? source.loss);
   const pushes = parseRecordValue(source.pushes ?? source.push ?? source.ties ?? source.tie ?? source.tied);
   if (overs === null && unders === null && pushes === null) return null;
-  const gamesEvaluated = parseRecordValue(source.games_evaluated ?? source.games ?? fallbackGames);
+  const gamesEvaluated = parseRecordValue(source.games_evaluated ?? source.gamesEvaluated ?? source.games ?? fallbackGames);
   const normalized = {};
   if (overs !== null) normalized.over = overs;
   if (unders !== null) normalized.under = unders;
